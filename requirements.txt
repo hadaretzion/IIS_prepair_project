@@ -1,0 +1,11 @@
+# Streamlit UI
+streamlit>=1.28.0
+
+# PDF processing
+pdfplumber>=0.9.0
+
+# LLM integration
+google-generativeai>=0.3.0
+
+# DOCX export
+python-docx>=1.1.0
