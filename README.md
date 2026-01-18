@@ -78,4 +78,3 @@ VITE_BACKEND_URL=http://localhost:8000
 - SQLite database (auto-created at `backend/data/app.db`)
 - Voice features require Chrome/Edge (Web Speech API)
 - See folder-specific READMEs for detailed information
-
