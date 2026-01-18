@@ -311,13 +311,6 @@ The codebase is designed to work on Replit:
 3. Backend runs on port 8000; frontend on 5173
 4. Both can run in separate Replit consoles or use a single main.py with subprocess
 
-## 📄 License
-
-This is a study/project prototype. Use at your own discretion.
-
----
-
-**Built with ❤️ using FastAPI, React, TypeScript, and Google Gemini 2.5 Pro**
 
 ## 🤖 AI Model Configuration
 
