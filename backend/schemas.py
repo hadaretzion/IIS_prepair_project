@@ -6,6 +6,9 @@ from datetime import datetime
 
 
 # User schemas
+class UserEnsureRequest(BaseModel):
+    user_id: Optional[str] = None
+
 class UserEnsureResponse(BaseModel):
     user_id: str
 

@@ -1,8 +1,9 @@
 """PrepAIr Backend - FastAPI main application."""
 
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from backend.db import init_db
 from backend.routers import users, cv, jd, interview, progress
 
@@ -17,17 +18,14 @@ app = FastAPI(
 )
 
 # CORS middleware (allow app dev origin)
+# IMPORTANT: CORS middleware must be added BEFORE routers
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite default
-        "http://localhost:3000",  # Alternative
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000"
-    ],
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",  # Allow localhost on any port
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Include routers
@@ -72,6 +70,8 @@ async def root():
 async def health():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
 
 
 if __name__ == "__main__":

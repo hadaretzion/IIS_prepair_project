@@ -1,3 +1,6 @@
 api_keys.json
 weekly_updates/
 .env
+venv/
+__pycache__/
+app/node_modules/

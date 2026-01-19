@@ -34,17 +34,20 @@ def score_answer(
         system_prompt = """You are an expert interview evaluator. Score answers objectively and provide structured feedback.
 Always respond with valid JSON only."""
         
+        code_section = f'Code provided:\n{user_code[:1000]}' if user_code else ''
+        ref_solution_section = f'Reference Solution:\n{reference_solution[:500]}' if reference_solution else ''
+        
         user_prompt = f"""Evaluate this interview answer:
 
 Question: {question}
 
 Answer (transcript): {user_transcript}
 
-{f'Code provided:\n{user_code[:1000]}' if user_code else ''}
+{code_section}
 
 Relevant Topics: {', '.join(topics[:10])}
 
-{f'Reference Solution:\n{reference_solution[:500]}' if reference_solution else ''}
+{ref_solution_section}
 
 Return a JSON object with this exact structure:
 {{
