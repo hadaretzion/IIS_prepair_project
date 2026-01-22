@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useToast } from '../components/Toast';
 import './PreInterview.css';
 
 function PreInterview() {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get('sessionId');
   const [voiceOn, setVoiceOn] = useState(true);
@@ -12,7 +14,6 @@ function PreInterview() {
   const [planSummary, setPlanSummary] = useState<any>(null);
 
   useEffect(() => {
-    // Load plan summary from localStorage
     const stored = localStorage.getItem('planSummary');
     if (stored) {
       try {
@@ -25,7 +26,8 @@ function PreInterview() {
 
   const handleStart = () => {
     if (!sessionId) {
-      alert('Session ID missing');
+      showToast('Session not found. Please start again.', 'error');
+      navigate('/');
       return;
     }
     

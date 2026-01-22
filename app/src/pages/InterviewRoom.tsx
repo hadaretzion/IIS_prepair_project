@@ -3,11 +3,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { speak, speakSequential, stopSpeaking } from '../voice/tts';
 import { startRecognition, stopRecognition, isSupported as sttSupported } from '../voice/stt';
+import { useToast } from '../components/Toast';
 import './InterviewRoom.css';
 
 function InterviewRoom() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [question, setQuestion] = useState<any>(null);
   const [transcript, setTranscript] = useState('');
   const [userCode, setUserCode] = useState('');
@@ -82,7 +84,7 @@ function InterviewRoom() {
 
   const handleStartRecording = () => {
     if (!sttSupported()) {
-      alert('Speech recognition not supported. Please use text input.');
+      showToast('Speech recognition not supported. Please use text input.', 'warning');
       return;
     }
 
@@ -90,7 +92,7 @@ function InterviewRoom() {
     stopRecognitionRef.current = startRecognition(
       (text) => setTranscript(text),
       (error) => {
-        alert(`Recognition error: ${error}`);
+        showToast(`Recognition error: ${error}`, 'error');
         setIsRecording(false);
       }
     );
@@ -106,7 +108,7 @@ function InterviewRoom() {
 
   const handleSubmit = async () => {
     if (!sessionId || (!transcript.trim() && !userCode.trim())) {
-      alert('Please provide an answer');
+      showToast('Please provide an answer', 'warning');
       return;
     }
 
@@ -167,7 +169,7 @@ function InterviewRoom() {
         }
       }
     } catch (error: any) {
-      alert(`Error: ${error.message}`);
+      showToast(error.message || 'Failed to process answer', 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -187,9 +189,10 @@ function InterviewRoom() {
 
     try {
       await api.endInterview(sessionId);
+      showToast('Interview ended', 'success');
       navigate(`/done/${sessionId}`);
     } catch (error: any) {
-      alert(`Error ending interview: ${error.message}`);
+      showToast(error.message || 'Failed to end interview', 'error');
     }
   };
 
