@@ -177,6 +177,29 @@
   background: var(--bg-card);
 }
 
+.mic-permission-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.mic-permission-banner.warning {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.mic-permission-text {
+  flex: 1;
+}
+
 .live-transcript {
   background: var(--bg-glass);
   border: 1px solid var(--border-glass);

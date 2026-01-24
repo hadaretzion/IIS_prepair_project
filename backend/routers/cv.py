@@ -160,7 +160,8 @@ def analyze_cv(
         strengths=strengths,
         gaps=gaps,
         suggestions=suggestions,
-        role_focus=focus
+        role_focus=focus,
+        cv_text=cv_version.cv_text
     )
 
 

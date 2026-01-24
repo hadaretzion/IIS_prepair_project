@@ -269,6 +269,59 @@ def end_interview(
     return InterviewEndResponse(ok=True)
 
 
+@router.get("/history/{user_id}")
+def get_interview_history(
+    user_id: str,
+    session: Session = Depends(get_session)
+):
+    """Get list of past interviews for a user."""
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get all interview sessions for this user
+    sessions = session.exec(
+        select(InterviewSession)
+        .where(InterviewSession.user_id == user_id)
+        .order_by(InterviewSession.created_at.desc())
+    ).all()
+    
+    history = []
+    for interview_session in sessions:
+        # Get turn count and average score
+        turns = session.exec(
+            select(InterviewTurn)
+            .where(InterviewTurn.session_id == interview_session.id)
+        ).all()
+        
+        total_score = 0.0
+        for turn in turns:
+            score_data = json.loads(turn.score_json or "{}")
+            total_score += score_data.get("overall", 0.0)
+        
+        avg_score = (total_score / len(turns) * 100) if turns else 0.0
+        
+        # Get job spec for role info
+        job_spec = session.get(JobSpec, interview_session.job_spec_id)
+        role_title = "Unknown Role"
+        if job_spec and job_spec.jd_profile_json:
+            profile = json.loads(job_spec.jd_profile_json)
+            role_title = profile.get("role_title", "Unknown Role")
+        
+        history.append({
+            "session_id": interview_session.id,
+            "role_title": role_title,
+            "mode": interview_session.mode.value,
+            "created_at": interview_session.created_at.isoformat(),
+            "ended_at": interview_session.ended_at.isoformat() if interview_session.ended_at else None,
+            "is_completed": interview_session.ended_at is not None,
+            "questions_answered": len(turns),
+            "average_score": round(avg_score, 1)
+        })
+    
+    return {"interviews": history}
+
+
 @router.get("/session/{session_id}")
 def get_session_data(
     session_id: str,

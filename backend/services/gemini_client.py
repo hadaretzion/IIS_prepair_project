@@ -1,4 +1,4 @@
-"""Gemini AI client using Replit AI Integrations."""
+"""Gemini AI client - supports both Replit AI Integrations and regular API key."""
 
 import os
 from typing import Optional
@@ -7,18 +7,32 @@ from google import genai
 from google.genai import types
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
-# Replit AI Integrations - provides Gemini access without requiring your own API key
+# Check for Replit AI Integrations first (for Replit environment)
 AI_INTEGRATIONS_GEMINI_API_KEY = os.environ.get("AI_INTEGRATIONS_GEMINI_API_KEY")
 AI_INTEGRATIONS_GEMINI_BASE_URL = os.environ.get("AI_INTEGRATIONS_GEMINI_BASE_URL")
 
-# Initialize Gemini client with Replit AI Integrations
-client = genai.Client(
-    api_key=AI_INTEGRATIONS_GEMINI_API_KEY,
-    http_options={
-        'api_version': '',
-        'base_url': AI_INTEGRATIONS_GEMINI_BASE_URL   
-    }
-)
+# Fallback to regular GEMINI_API_KEY for local development
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+# Determine which API key to use
+API_KEY = AI_INTEGRATIONS_GEMINI_API_KEY or GEMINI_API_KEY
+BASE_URL = AI_INTEGRATIONS_GEMINI_BASE_URL  # Only set for Replit integrations
+
+# Initialize Gemini client (lazy initialization - only if API key is available)
+client = None
+if API_KEY:
+    if BASE_URL:
+        # Replit AI Integrations mode
+        client = genai.Client(
+            api_key=API_KEY,
+            http_options={
+                'api_version': '',
+                'base_url': BASE_URL   
+            }
+        )
+    else:
+        # Regular API key mode (local development)
+        client = genai.Client(api_key=API_KEY)
 
 
 def is_rate_limit_error(exception: BaseException) -> bool:
@@ -54,8 +68,8 @@ def call_gemini(system_prompt: str, user_prompt: str, timeout: int = 30) -> str:
     Raises:
         ValueError: If API call fails
     """
-    if not AI_INTEGRATIONS_GEMINI_BASE_URL or not AI_INTEGRATIONS_GEMINI_API_KEY:
-        raise ValueError("Gemini AI Integrations not configured. Please set up the integration.")
+    if not API_KEY or not client:
+        raise ValueError("Gemini API not configured. Please set GEMINI_API_KEY in .env file or configure Replit AI Integrations.")
     
     try:
         # Combine system prompt with user prompt for better results
@@ -81,8 +95,8 @@ def call_gemini(system_prompt: str, user_prompt: str, timeout: int = 30) -> str:
 
 def generate_text(prompt: str) -> str:
     """Simple text generation with Gemini."""
-    if not AI_INTEGRATIONS_GEMINI_BASE_URL or not AI_INTEGRATIONS_GEMINI_API_KEY:
-        raise ValueError("Gemini AI Integrations not configured.")
+    if not API_KEY or not client:
+        raise ValueError("Gemini API not configured. Please set GEMINI_API_KEY in .env file.")
     
     try:
         response = client.models.generate_content(
@@ -96,4 +110,4 @@ def generate_text(prompt: str) -> str:
 
 def is_gemini_available() -> bool:
     """Check if Gemini AI is available and configured."""
-    return bool(AI_INTEGRATIONS_GEMINI_BASE_URL and AI_INTEGRATIONS_GEMINI_API_KEY)
+    return bool(API_KEY and client)

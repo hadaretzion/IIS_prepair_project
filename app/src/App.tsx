@@ -7,6 +7,7 @@ import InterviewRoom from './pages/InterviewRoom';
 import Done from './pages/Done';
 import FeedbackPlaceholder from './pages/FeedbackPlaceholder';
 import Dashboard from './pages/Dashboard';
+import InterviewHistory from './pages/InterviewHistory';
 import './App.css';
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
       <Route path="/done/:sessionId" element={<Done />} />
       <Route path="/feedback/:sessionId" element={<FeedbackPlaceholder />} />
       <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/history" element={<InterviewHistory />} />
     </Routes>
   );
 }

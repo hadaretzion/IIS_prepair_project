@@ -28,7 +28,7 @@ function Landing() {
     try {
       const { user_id } = await api.ensureUser();
       localStorage.setItem('userId', user_id);
-      navigate('/cv-improve');
+      navigate('/setup');
     } catch (error: any) {
       showToast(error.message || 'Failed to start. Please try again.', 'error');
     } finally {
@@ -47,6 +47,22 @@ function Landing() {
       navigate('/dashboard');
     } catch (error: any) {
       showToast(error.message || 'Failed to load dashboard. Please try again.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleHistory = async () => {
+    setLoading(true);
+    try {
+      const userId = localStorage.getItem('userId');
+      if (!userId) {
+        const { user_id } = await api.ensureUser();
+        localStorage.setItem('userId', user_id);
+      }
+      navigate('/history');
+    } catch (error: any) {
+      showToast(error.message || 'Failed to load history. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -93,6 +109,13 @@ function Landing() {
             disabled={loading}
           >
             View Dashboard
+          </button>
+          <button 
+            className="btn btn-tertiary" 
+            onClick={handleHistory}
+            disabled={loading}
+          >
+            Interview History
           </button>
         </div>
 

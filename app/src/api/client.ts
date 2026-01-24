@@ -65,6 +65,7 @@ export const api = {
       gaps: string[];
       suggestions: string[];
       role_focus: any;
+      cv_text: string;
     }>('/api/cv/analyze', {
       method: 'POST',
       body: JSON.stringify({ user_id: userId, cv_version_id: cvVersionId, job_spec_id: jobSpecId }),
@@ -167,6 +168,21 @@ export const api = {
       trend: any[];
       breakdown: any;
     }>(`/api/progress/overview?user_id=${userId}${jobSpecId ? `&job_spec_id=${jobSpecId}` : ''}`),
+
+  // Interview History
+  getInterviewHistory: (userId: string) =>
+    apiRequest<{
+      interviews: Array<{
+        session_id: string;
+        role_title: string;
+        mode: string;
+        created_at: string;
+        ended_at: string | null;
+        is_completed: boolean;
+        questions_answered: number;
+        average_score: number;
+      }>;
+    }>(`/api/interview/history/${userId}`),
 
   // Session
   getSession: (sessionId: string) =>

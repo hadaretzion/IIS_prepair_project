@@ -41,6 +41,10 @@ export function startRecognition(
 
   recognition.onerror = (event: any) => {
     if (onError) {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        onError('Microphone access is blocked. Please allow mic permission for this site and refresh.');
+        return;
+      }
       onError(`Recognition error: ${event.error}`);
     }
   };
@@ -50,7 +54,35 @@ export function startRecognition(
     // recognition.start();
   };
 
-  recognition.start();
+  const start = () => {
+    try {
+      recognition.start();
+    } catch (err: any) {
+      if (onError) {
+        onError(`Recognition error: ${err?.message || 'Unable to start recognition'}`);
+      }
+    }
+  };
+
+  if (navigator.mediaDevices?.getUserMedia) {
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((stream) => {
+        stream.getTracks().forEach((track) => track.stop());
+        start();
+      })
+      .catch((err) => {
+        if (onError) {
+          const reason =
+            err?.name === 'NotAllowedError' || err?.name === 'SecurityError'
+              ? 'Microphone access is blocked. Please allow mic permission for this site and refresh.'
+              : `Microphone error: ${err?.message || 'Unable to access microphone'}`;
+          onError(reason);
+        }
+      });
+  } else {
+    start();
+  }
 
   return () => {
     if (recognition) {
@@ -67,4 +99,24 @@ export function stopRecognition(): void {
 
 export function isSupported(): boolean {
   return recognition !== null;
+}
+
+export async function requestMicPermission(): Promise<'granted' | 'denied' | 'prompt' | 'unknown'> {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return 'unknown';
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((track) => track.stop());
+    return 'granted';
+  } catch (err: any) {
+    if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError') {
+      return 'denied';
+    }
+    if (err?.name === 'NotFoundError') {
+      return 'denied';
+    }
+    return 'unknown';
+  }
 }

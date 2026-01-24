@@ -43,6 +43,7 @@ class CVAnalyzeResponse(BaseModel):
     gaps: List[str]
     suggestions: List[str]
     role_focus: Dict[str, Any]
+    cv_text: str
 
 
 class CVSaveRequest(BaseModel):

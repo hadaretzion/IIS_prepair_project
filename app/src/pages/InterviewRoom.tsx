@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { speak, speakSequential, stopSpeaking, onSpeakingChange, isSupported as ttsSupported } from '../voice/tts';
-import { startRecognition, stopRecognition, isSupported as sttSupported } from '../voice/stt';
+import { startRecognition, stopRecognition, isSupported as sttSupported, requestMicPermission } from '../voice/stt';
 import { useToast } from '../components/Toast';
 import './InterviewRoom.css';
 
@@ -31,12 +31,14 @@ function InterviewRoom() {
   const [voiceOn, setVoiceOn] = useState(true);
   const [currentQuestion, setCurrentQuestion] = useState<any>(null);
   const [sttAvailable] = useState(sttSupported());
+  const [micPermission, setMicPermission] = useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown');
   
   const stopRecognitionRef = useRef<(() => void) | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const pendingTimeoutsRef = useRef<NodeJS.Timeout[]>([]);
   const isMountedRef = useRef(true);
+  const hasInitializedRef = useRef(false);
 
   const clearPendingTimeouts = useCallback(() => {
     pendingTimeoutsRef.current.forEach(t => clearTimeout(t));
@@ -113,7 +115,40 @@ function InterviewRoom() {
     };
   }, [sessionId, navigate, clearPendingTimeouts]);
 
+  useEffect(() => {
+    if (!sttAvailable) {
+      return;
+    }
+    const permissions = (navigator as any).permissions;
+    if (!permissions?.query) {
+      return;
+    }
+
+    permissions
+      .query({ name: 'microphone' })
+      .then((status: any) => {
+        if (!isMountedRef.current) {
+          return;
+        }
+        setMicPermission(status.state);
+        status.onchange = () => {
+          if (isMountedRef.current) {
+            setMicPermission(status.state);
+          }
+        };
+      })
+      .catch(() => {
+        if (isMountedRef.current) {
+          setMicPermission('unknown');
+        }
+      });
+  }, [sttAvailable]);
+
   const loadInitialQuestion = async () => {
+    if (hasInitializedRef.current) {
+      return;
+    }
+    hasInitializedRef.current = true;
     const storedFirstQuestion = localStorage.getItem('firstQuestion');
     const storedTotalQuestions = localStorage.getItem('totalQuestions');
 
@@ -183,6 +218,25 @@ function InterviewRoom() {
         }
       }
     );
+  };
+
+  const handleRequestMic = async () => {
+    if (!sttAvailable) {
+      showToast('Speech recognition not supported in this browser. Please use Chrome or Edge.', 'warning');
+      return;
+    }
+    const state = await requestMicPermission();
+    if (!isMountedRef.current) {
+      return;
+    }
+    setMicPermission(state);
+    if (state === 'granted') {
+      showToast('Microphone enabled', 'success');
+    } else if (state === 'denied') {
+      showToast('Microphone blocked. Please allow mic access in your browser settings.', 'error');
+    } else {
+      showToast('Unable to access microphone. Please try again.', 'warning');
+    }
   };
 
   const handleStopRecording = () => {
@@ -354,6 +408,23 @@ function InterviewRoom() {
 
         {/* Voice Controls */}
         <div className="voice-controls">
+          {!sttAvailable && (
+            <div className="mic-permission-banner warning">
+              Voice input is not supported in this browser. Please use Chrome or Edge.
+            </div>
+          )}
+          {sttAvailable && micPermission !== 'granted' && (
+            <div className="mic-permission-banner">
+              <div className="mic-permission-text">
+                {micPermission === 'denied'
+                  ? 'Microphone access is blocked. Allow access in your browser settings.'
+                  : 'Microphone access is not enabled. Click to allow microphone access.'}
+              </div>
+              <button className="btn btn-secondary" onClick={handleRequestMic}>
+                Enable microphone
+              </button>
+            </div>
+          )}
           {/* Live transcript display */}
           {isRecording && (
             <div className="live-transcript">

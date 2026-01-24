@@ -11,7 +11,6 @@ function CvImprove() {
   const [cvText, setCvText] = useState(localStorage.getItem('cvText') || '');
   const [analysis, setAnalysis] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [proceeding, setProceeding] = useState(false);
 
   useEffect(() => {
@@ -29,6 +28,11 @@ function CvImprove() {
       try {
         const result = await api.analyzeCV(userId, cvVersionId, jobSpecId);
         setAnalysis(result);
+        // prefer backend cv_text (handles PDF uploads); fall back to local copy
+        if (result.cv_text) {
+          setCvText(result.cv_text);
+          localStorage.setItem('cvText', result.cv_text);
+        }
       } catch (error: any) {
         showToast(error.message || 'Failed to load analysis', 'error');
       } finally {
@@ -38,25 +42,6 @@ function CvImprove() {
 
     loadAnalysis();
   }, [navigate, showToast]);
-
-  const handleSaveCV = async () => {
-    const userId = localStorage.getItem('userId');
-    const parentCvVersionId = localStorage.getItem('cvVersionId');
-
-    if (!userId) return;
-
-    setSaving(true);
-    try {
-      const result = await api.saveCV(userId, cvText, parentCvVersionId || undefined);
-      localStorage.setItem('cvVersionId', result.new_cv_version_id);
-      localStorage.setItem('cvText', cvText);
-      showToast('CV saved successfully!', 'success');
-    } catch (error: any) {
-      showToast(error.message || 'Failed to save CV', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleProceedToInterview = async () => {
     const userId = localStorage.getItem('userId');
@@ -113,73 +98,167 @@ function CvImprove() {
   }
 
   const matchPercent = (analysis.match_score * 100).toFixed(0);
+  const estimatedScore = Math.min(100, parseInt(matchPercent) + 14);
+
+  const renderCvPreview = () => {
+    const sectionKeywords = [
+      'Summary',
+      'Objective',
+      'Profile',
+      'Projects',
+      'Experience',
+      'Professional Experience',
+      'Work Experience',
+      'Technical Skills',
+      'Skills',
+      'Education',
+      'Languages',
+      'Certifications',
+      'Publications'
+    ];
+
+    const normalizeCvText = (raw: string) => {
+      let text = raw.replace(/\r\n/g, '\n');
+
+      // If user pasted a single long line, add breaks before common section keywords
+      if (!text.includes('\n')) {
+        text = text.replace(/\s+/g, ' ').trim();
+        sectionKeywords.forEach((k) => {
+          const re = new RegExp(`\\s*(${k})\\b`, 'gi');
+          text = text.replace(re, `\n\n${k}`);
+        });
+      }
+      return text.trim();
+    };
+
+    const normalized = normalizeCvText(cvText);
+    if (!normalized) {
+      return <p className="cv-empty">No CV content available</p>;
+    }
+
+    const lines = normalized.split(/\n+/);
+    const blocks: Array<{ type: 'list' | 'text'; items: string[] }> = [];
+    let current: { type: 'list' | 'text'; items: string[] } | null = null;
+
+    const flush = () => {
+      if (current && current.items.length) {
+        blocks.push(current);
+      }
+      current = null;
+    };
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) {
+        flush();
+        continue;
+      }
+
+      const isBullet = /^[-*•]/.test(line);
+      if (isBullet) {
+        if (!current || current.type !== 'list') {
+          flush();
+          current = { type: 'list', items: [] };
+        }
+        current.items.push(line.replace(/^[-*•]\s*/, ''));
+      } else {
+        if (!current || current.type !== 'text') {
+          flush();
+          current = { type: 'text', items: [] };
+        }
+        current.items.push(line);
+      }
+    }
+    flush();
+
+    return blocks.map((block, idx) => {
+      if (block.type === 'list') {
+        return (
+          <ul className="cv-list" key={`list-${idx}`}>
+            {block.items.map((item, i) => (
+              <li key={i}>{item}</li>
+            ))}
+          </ul>
+        );
+      }
+      return block.items.map((p, i) => (
+        <p className="cv-line" key={`p-${idx}-${i}`}>
+          {p}
+        </p>
+      ));
+    });
+  };
 
   return (
     <div className="cv-improve">
       {proceeding && <FullPageLoader message="Preparing interview..." />}
       <div className="container">
-        <h1>CV Analysis & Improvement</h1>
+        <h1>CV Optimization: Aligning with Job Requirements</h1>
 
-        <div className="score-section">
-          <div className="score-circle">
-            <span className="score-value">{matchPercent}%</span>
-            <span className="score-label">Match Score</span>
+        <div className="score-comparison">
+          <div className="score-badge current">
+            <span>Match Score: {matchPercent}%</span>
+            <span className="score-tag">(Current)</span>
+          </div>
+          <div className="score-badge estimated">
+            <span>{estimatedScore}%</span>
+            <span className="score-tag">(Estimated after edits)</span>
           </div>
         </div>
 
-        <div className="analysis-grid">
-          <div className="analysis-card strengths">
-            <h3>Strengths</h3>
-            <ul>
-              {analysis.strengths?.map((s: string, i: number) => (
-                <li key={i}>{s}</li>
-              ))}
-            </ul>
+        <div className="cv-layout">
+          {/* Left side: CV Preview */}
+          <div className="cv-preview-panel">
+            <div className="panel-header">Your CV (Preview)</div>
+            <div className="cv-content">
+              <div className="cv-paper">
+                <div className="cv-body">{renderCvPreview()}</div>
+              </div>
+            </div>
           </div>
 
-          <div className="analysis-card gaps">
-            <h3>Gaps to Address</h3>
-            <ul>
-              {analysis.gaps?.map((g: string, i: number) => (
-                <li key={i}>{g}</li>
-              ))}
-            </ul>
-          </div>
+          {/* Right side: AI Suggestions */}
+          <div className="suggestions-panel">
+            <div className="panel-header">AI Suggestions</div>
+            
+            <div className="analysis-card strengths">
+              <h3>Strengths</h3>
+              <ul>
+                {analysis.strengths?.map((s: string, i: number) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ul>
+            </div>
 
-          <div className="analysis-card suggestions full-width">
-            <h3>Suggestions</h3>
-            <ul>
-              {analysis.suggestions?.map((s: string, i: number) => (
-                <li key={i}>{s}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
+            <div className="analysis-card gaps">
+              <h3>Gaps to Address</h3>
+              <ul>
+                {analysis.gaps?.map((g: string, i: number) => (
+                  <li key={i}>{g}</li>
+                ))}
+              </ul>
+            </div>
 
-        <div className="cv-editor">
-          <label>Edit Your CV</label>
-          <textarea
-            value={cvText}
-            onChange={(e) => setCvText(e.target.value)}
-            rows={16}
-            placeholder="Your CV text..."
-          />
+            <div className="analysis-card suggestions">
+              <h3>Improvement Suggestions</h3>
+              <ul>
+                {analysis.suggestions?.map((s: string, i: number) => (
+                  <li key={i}>
+                    <span className="suggestion-text">{s}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
         </div>
 
         <div className="action-buttons">
-          <button 
-            className="btn btn-secondary" 
-            onClick={handleSaveCV}
-            disabled={saving}
-          >
-            {saving ? 'Saving...' : 'Save CV'}
-          </button>
           <button 
             className="btn btn-primary" 
             onClick={handleProceedToInterview}
             disabled={proceeding}
           >
-            {proceeding ? 'Starting...' : 'Proceed to Interview'}
+            {proceeding ? 'Starting...' : 'Save & Continue to Interview'}
           </button>
         </div>
       </div>

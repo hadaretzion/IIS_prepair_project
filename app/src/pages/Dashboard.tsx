@@ -98,6 +98,9 @@ function Dashboard() {
               <button className="btn btn-primary" onClick={() => navigate('/setup')}>
                 Start New Practice
               </button>
+              <button className="btn btn-secondary" onClick={() => navigate('/history')}>
+                View Interview History
+              </button>
             </div>
           </>
         ) : (
