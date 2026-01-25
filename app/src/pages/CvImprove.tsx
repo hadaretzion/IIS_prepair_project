@@ -11,7 +11,6 @@ function CvImprove() {
   const [cvText, setCvText] = useState(localStorage.getItem('cvText') || '');
   const [analysis, setAnalysis] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [proceeding, setProceeding] = useState(false);
 
   useEffect(() => {
     const loadAnalysis = async () => {
@@ -43,40 +42,8 @@ function CvImprove() {
     loadAnalysis();
   }, [navigate, showToast]);
 
-  const handleProceedToInterview = async () => {
-    const userId = localStorage.getItem('userId');
-    const jobSpecId = localStorage.getItem('jobSpecId');
-    const cvVersionId = localStorage.getItem('cvVersionId');
-
-    if (!userId || !jobSpecId || !cvVersionId) return;
-
-    setProceeding(true);
-    try {
-      const result = await api.startInterview(
-        userId,
-        jobSpecId,
-        cvVersionId,
-        'after_cv',
-        { num_open: 4, num_code: 2, duration_minutes: 12 }
-      );
-
-      if (result.first_question) {
-        localStorage.setItem('firstQuestion', JSON.stringify(result.first_question));
-      }
-      if (result.plan_summary) {
-        localStorage.setItem('planSummary', JSON.stringify(result.plan_summary));
-      }
-      if (result.total_questions) {
-        localStorage.setItem('totalQuestions', result.total_questions.toString());
-      }
-
-      showToast('Interview ready!', 'success');
-      navigate(`/pre-interview?sessionId=${result.session_id}`);
-    } catch (error: any) {
-      showToast(error.message || 'Failed to start interview', 'error');
-    } finally {
-      setProceeding(false);
-    }
+  const handleProceedToInterview = () => {
+    navigate('/interview/settings');
   };
 
   if (loading) {
@@ -191,7 +158,6 @@ function CvImprove() {
 
   return (
     <div className="cv-improve">
-      {proceeding && <FullPageLoader message="Preparing interview..." />}
       <div className="container">
         <h1>CV Optimization: Aligning with Job Requirements</h1>
 
@@ -256,9 +222,8 @@ function CvImprove() {
           <button 
             className="btn btn-primary" 
             onClick={handleProceedToInterview}
-            disabled={proceeding}
           >
-            {proceeding ? 'Starting...' : 'Save & Continue to Interview'}
+            Continue to Interview Setup
           </button>
         </div>
       </div>

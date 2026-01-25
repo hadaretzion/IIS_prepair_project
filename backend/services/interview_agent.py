@@ -64,22 +64,23 @@ class AgenticInterviewAgent:
         
         # If Hebrew, we want strict Hebrew translation + refinement
         if language and language.lower() == "hebrew":
-            prompt = f"""Task: Translate and Refine Interview Question.
+            prompt = f"""Task: Translate and Refine Interview Question for a Professional Job Interview.
 Target Language: Hebrew (Ivrit).
 Instructions:
-1. Translate the following technical interview question to professional, natural Hebrew.
-2. EXPAND on the question to provide a RICH, DETAILED SCENARIO.
-3. Instead of just asking the question, wrap it in a real-world engineering context (e.g., "We are building a financial system...", "We need to parse legacy data...").
-4. Make the question feel like a discussion with a senior engineer.
-5. Ensure the technical requirements are clear and detailed.
-6. Output ONLY the final Hebrew question text (Scenario + Question).
+1. Translate the following interview question to professional, natural Hebrew.
+2. Frame the question as a professional interviewer would ask it in a real job interview.
+3. Keep the tone professional, direct, and respectful - like a senior hiring manager.
+4. For technical questions, you may add brief context (e.g., "In our team, we often deal with...").
+5. For behavioral questions, ask directly without elaborate storytelling.
+6. Do NOT use casual phrases like "let's grab coffee" or "imagine you're chatting with a friend".
+7. Output ONLY the final Hebrew question text.
 
 Original Question: "{text}"
 Question Type: {type}
 
 Hebrew Question:"""
             try:
-                result = call_llm("You are an expert Hebrew technical interviewer.", prompt, prefer="groq")
+                result = call_llm("You are a professional job interviewer conducting a formal interview.", prompt, prefer="groq")
                 if result and result.strip():
                     return result.strip()
             except Exception as e:
@@ -87,20 +88,22 @@ Hebrew Question:"""
                 return text # Fallback to original
 
         # English Refinement
-        prompt = f"""Task: Refine Interview Question.
+        prompt = f"""Task: Refine Interview Question for a Professional Job Interview.
 Instructions:
-1. Rewrite the following question to include a DETAILED, ENGAGING SCENARIO.
-2. Do not just ask the question. Set the scene. (e.g., "Imagine we are processing large log files..." or "We need to optimize a critical path...").
-3. Make it sound like a peer-to-peer engineering discussion.
-4. Ensure the core technical question is preserved but framed naturally.
-5. Output ONLY the refined question text.
+1. Rewrite the question as a professional interviewer would ask it in a real job interview.
+2. Keep the tone professional, direct, and respectful - like a senior hiring manager or tech lead.
+3. For technical questions, you may add brief real-world context (e.g., "In production systems, we often need to...").
+4. For behavioral questions, ask directly and professionally without elaborate storytelling or casual scenarios.
+5. Do NOT use casual phrases like "grab a coffee", "imagine you're chatting", or "let's pretend".
+6. The question should feel like it's coming from an experienced interviewer, not a friend.
+7. Output ONLY the refined question text.
 
 Original Question: "{text}"
 Question Type: {type}
 
 Refined Question:"""
         try:
-            result = call_llm("You are an expert technical interviewer.", prompt, prefer="groq")
+            result = call_llm("You are a professional job interviewer conducting a formal interview.", prompt, prefer="groq")
             if result and result.strip():
                 return result.strip()
         except Exception as e:
@@ -282,18 +285,34 @@ Refined Question:"""
             }
 
         if decision.action == "end":
-            # Agent is ending the interview
-            interview_session.ended_at = datetime.utcnow()
-            session.add(interview_session)
-            session.commit()
-            return {
-                "interviewer_message": decision.message or "Thank you for your time today.",
-                "followup_question": None,
-                "next_question": None,
-                "is_done": True,
-                "progress": {"turn_index": question_index + 1, "total": len(plan_items)},
-                "agent_decision": decision.action,
-            }
+            # SAFEGUARD: Double-check we're actually at the last question
+            if question_index < len(plan_items) - 1:
+                logger.warning(
+                    "Agent returned 'end' but we're at question %d/%d. Forcing advance instead.",
+                    question_index + 1, len(plan_items)
+                )
+                # Override to advance instead
+                decision = AgentDecision(
+                    action="advance",
+                    message=decision.message or "Let's continue to the next question.",
+                    satisfaction_score=decision.satisfaction_score,
+                    reasoning_trace=decision.reasoning_trace
+                )
+                # Fall through to advance handling below
+            else:
+                # Actually the last question - end the interview
+                logger.info("Ending interview at question %d/%d", question_index + 1, len(plan_items))
+                interview_session.ended_at = datetime.utcnow()
+                session.add(interview_session)
+                session.commit()
+                return {
+                    "interviewer_message": decision.message or "Thank you for your time today.",
+                    "followup_question": None,
+                    "next_question": None,
+                    "is_done": True,
+                    "progress": {"turn_index": question_index + 1, "total": len(plan_items)},
+                    "agent_decision": decision.action,
+                }
 
         # Default: advance to next question
         state["question_index"] = question_index + 1
@@ -342,6 +361,56 @@ Refined Question:"""
         """Create an InterviewTurn record."""
         topics = json.loads(question.topics_json or "[]")
 
+        # Build detailed score_json with rubric from reasoning trace
+        score_data = {"overall": decision.satisfaction_score}
+        found_evaluation = False
+
+        # Extract detailed analysis from reasoning trace
+        for step in decision.reasoning_trace:
+            if step.step_type == "tool_result" and isinstance(step.content, dict):
+                tool_name = step.content.get("tool", "")
+                tool_data = step.content.get("data", {})
+
+                if tool_name == "analyze_answer" and step.content.get("success"):
+                    found_evaluation = True
+                    # Extract rubric details from answer analysis
+                    if "score" in tool_data:
+                        score_data["overall"] = tool_data["score"]
+                    if "strengths" in tool_data:
+                        score_data["strengths"] = tool_data["strengths"]
+                    if "gaps" in tool_data:
+                        score_data["gaps"] = tool_data["gaps"]
+                    if "summary" in tool_data:
+                        score_data["notes"] = [tool_data["summary"]]
+
+                elif tool_name == "evaluate_code" and step.content.get("success"):
+                    found_evaluation = True
+                    # Extract rubric from code evaluation
+                    rubric = {}
+                    if "correctness" in tool_data:
+                        rubric["correctness"] = tool_data["correctness"]
+                    if "efficiency" in tool_data:
+                        rubric["efficiency"] = tool_data["efficiency"]
+                    if "style" in tool_data:
+                        rubric["style"] = tool_data["style"]
+                    if rubric:
+                        score_data["rubric"] = rubric
+                    if "score" in tool_data:
+                        score_data["overall"] = tool_data["score"]
+                    if "issues" in tool_data:
+                        score_data["notes"] = tool_data.get("notes", []) + tool_data["issues"]
+
+        # FALLBACK: If no evaluation was found, directly evaluate the answer/code
+        if not found_evaluation and (request.user_transcript or request.user_code):
+            logger.info("No evaluation found in reasoning trace, running fallback evaluation")
+            fallback_score = self._fallback_evaluate(
+                question.question_text,
+                request.user_transcript,
+                request.user_code
+            )
+            if fallback_score:
+                score_data.update(fallback_score)
+
         turn = InterviewTurn(
             id=str(uuid.uuid4()),
             session_id=request.session_id,
@@ -352,7 +421,7 @@ Refined Question:"""
             question_snapshot=question.question_text,
             user_transcript=request.user_transcript,
             user_code=request.user_code,
-            score_json=json.dumps({"overall": decision.satisfaction_score}),
+            score_json=json.dumps(score_data),
             topics_json=json.dumps(topics),
             parent_turn_id=None,
             question_number=question_index,
@@ -367,6 +436,118 @@ Refined Question:"""
                 turn.parent_turn_id = parent_turn.id
 
         return turn
+
+    def _fallback_evaluate(
+        self,
+        question_text: str,
+        user_transcript: Optional[str],
+        user_code: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fallback evaluation when agent tools don't produce a score.
+        Directly calls LLM to evaluate the answer/code.
+        """
+        from backend.services.llm_client import call_llm
+
+        # Determine if this is a code question
+        has_code = bool(user_code and user_code.strip())
+        content_to_evaluate = user_code if has_code else (user_transcript or "")
+
+        if not content_to_evaluate.strip():
+            return None
+
+        try:
+            if has_code:
+                # Evaluate code
+                system_prompt = """You are a senior software engineer evaluating interview code solutions.
+Be GENEROUS with scores for working solutions. Most interview candidates with correct code should pass.
+Return ONLY valid JSON."""
+
+                user_prompt = f"""Evaluate this code solution.
+
+Question/Problem:
+{question_text[:1500]}
+
+Candidate's Code:
+```
+{user_code[:2000]}
+```
+
+Return JSON:
+{{
+    "overall": 0.0-1.0 (overall quality score),
+    "rubric": {{
+        "correctness": 0.0-1.0 (does it solve the problem correctly?),
+        "efficiency": 0.0-1.0 (is it efficient? O(n) vs O(n^2) etc),
+        "style": 0.0-1.0 (clean, readable, well-structured?)
+    }},
+    "strengths": ["strength1", "strength2"],
+    "notes": ["note about the solution"]
+}}
+
+IMPORTANT SCORING RULES - Be generous:
+- If code is CORRECT and solves the problem: overall should be 0.85 or higher
+- If code is correct AND has good time complexity: overall should be 0.90-0.95
+- If code is correct, efficient, AND well-written: overall should be 0.95-1.0
+- Only give below 0.7 if the code has actual bugs or doesn't solve the problem
+- This is an interview - reward working solutions!"""
+
+            else:
+                # Evaluate verbal answer
+                system_prompt = """You are a technical interviewer evaluating candidate answers.
+Analyze the response objectively for completeness, accuracy, and clarity.
+Return ONLY valid JSON."""
+
+                user_prompt = f"""Evaluate this interview answer.
+
+Question:
+{question_text[:1500]}
+
+Candidate's Answer:
+{user_transcript[:2000]}
+
+Return JSON:
+{{
+    "overall": 0.0-1.0 (overall quality score),
+    "strengths": ["strength1", "strength2"],
+    "gaps": ["gap1", "gap2"],
+    "notes": ["brief assessment"]
+}}
+
+Scoring guide:
+- 0.9-1.0: Excellent - comprehensive, accurate, well-articulated
+- 0.7-0.89: Good - solid answer with minor gaps
+- 0.5-0.69: Acceptable - partial answer or lacks depth
+- 0.3-0.49: Poor - significant gaps or inaccuracies
+- 0.0-0.29: Very poor - doesn't address the question"""
+
+            response = call_llm(system_prompt, user_prompt, prefer="groq")
+
+            # Parse JSON response
+            response = response.strip()
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0].strip()
+            elif "```" in response:
+                response = response.split("```")[1].split("```")[0].strip()
+
+            result = json.loads(response)
+
+            # Ensure overall is a valid float
+            # Default to 0.85 for code (benefit of doubt), 0.6 for verbal answers
+            default_score = 0.85 if has_code else 0.6
+            overall = float(result.get("overall", default_score))
+            overall = max(0.0, min(1.0, overall))
+            result["overall"] = overall
+
+            logger.info(f"Fallback evaluation produced score: {overall}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Fallback evaluation failed: {e}")
+            # Return a default score instead of None for code submissions
+            if has_code:
+                return {"overall": 0.85, "notes": ["Code submitted - evaluation pending"]}
+            return None
 
     def _get_next_question_data(
         self,

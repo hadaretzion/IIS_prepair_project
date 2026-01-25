@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import random
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -349,20 +350,50 @@ class AgentReasoningLoop:
                 if tool_call.name == "advance_to_next":
                     # Use natural response if available, otherwise use tool's feedback
                     message = generated_response or tool_result.data.get("feedback", "")
+                    # Use score from analyze_answer if available, otherwise from tool args
+                    actual_score = (
+                        latest_analysis.get("score", 0.5) if latest_analysis
+                        else (latest_code_analysis.get("score", 0.5) if latest_code_analysis
+                              else tool_result.data.get("satisfaction_score", 0.7))
+                    )
                     return AgentDecision(
                         action="advance",
                         message=message,
-                        satisfaction_score=tool_result.data.get("satisfaction_score", 0.7),
+                        satisfaction_score=actual_score,
                         reasoning_trace=reasoning_trace
                     )
 
                 if tool_call.name == "end_interview":
+                    # SAFEGUARD: Only end if it's actually the last question
+                    if not context.is_last_question():
+                        logger.warning("Agent tried to end interview early (question %d/%d). Forcing advance instead.",
+                                      context.question_index + 1, context.total_questions)
+                        # Force advance to next question instead of ending
+                        message = generated_response or "Let's continue to the next question."
+                        actual_score = (
+                            latest_analysis.get("score", 0.7) if latest_analysis
+                            else (latest_code_analysis.get("score", 0.7) if latest_code_analysis
+                                  else 0.7)
+                        )
+                        return AgentDecision(
+                            action="advance",
+                            message=message,
+                            satisfaction_score=actual_score,
+                            reasoning_trace=reasoning_trace
+                        )
+
                     # Use natural response if available
                     message = generated_response or tool_result.data.get("closing_message", "Thank you for your time.")
+                    # Use score from analyze_answer if available (for the final answer's score)
+                    final_score = (
+                        latest_analysis.get("score", 0.7) if latest_analysis
+                        else (latest_code_analysis.get("score", 0.7) if latest_code_analysis
+                              else 0.7)
+                    )
                     return AgentDecision(
                         action="end",
                         message=message,
-                        satisfaction_score=0.0,  # N/A for end
+                        satisfaction_score=final_score,
                         reasoning_trace=reasoning_trace
                     )
 
@@ -469,59 +500,184 @@ class AgentReasoningLoop:
     ) -> Optional[AgentDecision]:
         """Fallback path: try Groq to generate natural response when Gemini fails."""
         from backend.services.llm_client import call_llm
-        
+
         groq_key = os.environ.get("GROQ_API_KEY")
         if not groq_key:
             return None
 
         question_text = getattr(context, "question_text", "this topic")
-        candidate_answer = context.user_transcript[:300] if context.user_transcript else "(no response)"
-        
+        candidate_answer = context.user_transcript[:300] if context.user_transcript else ""
+        user_code = getattr(context, "user_code", None) or ""
+
         # Get language from context
         language = context.language if context.language else "english"
         language_instruction = ""
         if language.lower() == "hebrew":
             language_instruction = "IMPORTANT: You must respond in HEBREW (Ivrit). Translate everything to natural, professional Hebrew. "
-        
+
+        # CODE SUBMISSION: If code was provided, evaluate it and advance
+        if user_code and user_code.strip():
+            logger.info("Groq fallback: Code detected, evaluating and advancing")
+
+            # Evaluate the code
+            eval_system = """You are a senior software engineer evaluating interview code solutions.
+Return ONLY valid JSON. Be GENEROUS with scores for working solutions.
+
+SCORING RULES:
+- If code is CORRECT and solves the problem: minimum 0.85
+- If code is correct AND efficient (good Big-O): 0.90-0.95
+- If code is correct, efficient, AND clean/readable: 0.95-1.0
+- Only give < 0.7 if code has bugs or doesn't work
+
+Return: {"score": 0.0-1.0, "feedback": "brief assessment", "is_correct": true/false}"""
+
+            eval_prompt = f"""Question: {question_text[:1000]}
+
+Code:
+```
+{user_code[:1500]}
+```
+
+Does this code correctly solve the problem? If YES, score should be 0.85 or higher.
+Return JSON only."""
+
+            try:
+                eval_response = call_llm(eval_system, eval_prompt, prefer="groq")
+                eval_response = eval_response.strip()
+                if "```json" in eval_response:
+                    eval_response = eval_response.split("```json")[1].split("```")[0].strip()
+                elif "```" in eval_response:
+                    eval_response = eval_response.split("```")[1].split("```")[0].strip()
+
+                import json
+                eval_data = json.loads(eval_response)
+                score = float(eval_data.get("score", 0.7))
+                score = max(0.0, min(1.0, score))
+                feedback = eval_data.get("feedback", "Good solution.")
+            except Exception as e:
+                logger.error("Code evaluation in Groq fallback failed: %s", e)
+                score = 0.85  # Default to good score for submitted code (benefit of doubt)
+                feedback = "Thanks for the solution."
+
+            # Generate natural response about the code
+            msg_system = f"You are a technical interviewer. {language_instruction}Generate ONE brief response (1-2 sentences) about the candidate's code solution."
+            msg_prompt = f"The candidate submitted code for: {question_text[:200]}\nAssessment: {feedback}\nGenerate a brief, natural response acknowledging their solution and transitioning to the next question. Do NOT ask follow-up questions."
+
+            try:
+                message = call_llm(msg_system, msg_prompt, prefer="groq").strip()[:250]
+            except:
+                message = "נראה טוב. בוא נמשיך." if language.lower() == "hebrew" else "That looks good. Let's continue."
+
+            trace.append(ReasoningStep(step_type="tool_result", content={
+                "tool": "groq_code_eval",
+                "result": {"score": score, "feedback": feedback},
+                "success": True,
+                "data": {"score": score}
+            }))
+
+            return AgentDecision(
+                action="advance",
+                message=message,
+                satisfaction_score=score,
+                reasoning_trace=trace,
+            )
+
         # Check if we should advance instead of asking another follow-up
         if context.should_force_advance():
             # Max follow-ups reached - generate transition message and advance
             system_prompt = f"You are a technical interviewer. {language_instruction}Generate ONE brief, natural response (1-2 sentences)."
             user_prompt = f"Question: {question_text}\nCandidate's answer: {candidate_answer}\nGenerate a brief natural response acknowledging their answer and transitioning to the next topic. Do NOT ask another question."
-            
+
             try:
                 message = call_llm(system_prompt, user_prompt, prefer="groq").strip()[:200]
             except Exception as e:
                 logger.error("Failed to generate advance message in Groq fallback: %s", e)
                 message = "תודה על התשובות המפורטות. בוא נמשיך לנושא הבא." if language.lower() == "hebrew" else "Thank you for your detailed responses. Let's move on to the next topic."
-            
+
             trace.append(ReasoningStep(step_type="tool_result", content={
                 "tool": "groq_fallback",
                 "result": "advance (max followups reached)",
                 "source_error": error,
             }))
-            
+
             return AgentDecision(
                 action="advance",
                 message=message,
                 satisfaction_score=0.6,
                 reasoning_trace=trace,
             )
-        
+
+        # NO CODE - Check if verbal answer is substantial enough to advance
+        if candidate_answer and len(candidate_answer.strip()) > 100:
+            # Substantial answer - evaluate and likely advance
+            eval_system = f"You are a technical interviewer. {language_instruction}Evaluate this answer briefly. Return JSON: {{\"score\": 0.0-1.0, \"should_followup\": true/false, \"reason\": \"brief\"}}"
+            eval_prompt = f"Question: {question_text[:500]}\nAnswer: {candidate_answer}\nIs this a complete, good answer? Score it and decide if follow-up is needed."
+
+            try:
+                eval_response = call_llm(eval_system, eval_prompt, prefer="groq")
+                eval_response = eval_response.strip()
+                if "```" in eval_response:
+                    eval_response = eval_response.split("```")[1].split("```")[0].strip()
+
+                import json
+                eval_data = json.loads(eval_response)
+                score = float(eval_data.get("score", 0.6))
+                should_followup = eval_data.get("should_followup", False)
+            except:
+                score = 0.6
+                should_followup = False
+
+            if not should_followup or score >= 0.7:
+                # Good enough answer - advance
+                msg_system = f"You are a technical interviewer. {language_instruction}Generate ONE brief response."
+                msg_prompt = f"The candidate gave a good answer about {question_text[:100]}. Generate a brief acknowledgement and transition to the next topic."
+
+                try:
+                    message = call_llm(msg_system, msg_prompt, prefer="groq").strip()[:200]
+                except:
+                    message = "תשובה טובה. בוא נמשיך." if language.lower() == "hebrew" else "Good answer. Let's move on."
+
+                trace.append(ReasoningStep(step_type="tool_result", content={
+                    "tool": "groq_answer_eval",
+                    "success": True,
+                    "data": {"score": score}
+                }))
+
+                return AgentDecision(
+                    action="advance",
+                    message=message,
+                    satisfaction_score=score,
+                    reasoning_trace=trace,
+                )
+
         # Generate natural acknowledgement first
         system_prompt = f"You are a technical interviewer. {language_instruction}Generate ONE brief, natural response (1-2 sentences)."
-        user_prompt = f"Question: {question_text}\nCandidate's answer: {candidate_answer}\nGenerate a brief natural acknowledgement acknowledging what they said. Do NOT ask a question."
-        
+        user_prompt = f"Question: {question_text}\nCandidate's answer: {candidate_answer or '(minimal response)'}\nGenerate a brief natural acknowledgement acknowledging what they said. Do NOT ask a question."
+
         try:
             acknowledgement = call_llm(system_prompt, user_prompt, prefer="groq").strip()[:200]
         except Exception as e:
             logger.error("Failed to generate acknowledgement in Groq fallback: %s", e)
-            acknowledgement = "אני מעריך את התשובה שלך." if language.lower() == "hebrew" else "I appreciate your response."
-        
+            if language.lower() == "hebrew":
+                acknowledgement = random.choice([
+                    "הבנתי, תודה.",
+                    "אוקיי, הבנתי.",
+                    "תודה על התשובה.",
+                    "רשמתי את הדברים."
+                ])
+            else:
+                acknowledgement = random.choice([
+                    "Thank you for that.",
+                    "Understood.",
+                    "I see.",
+                    "Thanks for sharing that.",
+                    "Got it."
+                ])
+
         # Generate follow-up question
-        followup_system = f"You are a technical interviewer. {language_instruction}Generate ONE brief follow-up question to probe deeper."
-        followup_prompt = f"Question: {question_text}\nCandidate's answer: {candidate_answer}\nGenerate ONE brief follow-up question. Output ONLY the question text."
-        
+        followup_system = f"You are a technical interviewer. {language_instruction}Generate ONE specific, technical follow-up question about the topic."
+        followup_prompt = f"Question: {question_text}\nCandidate's answer: {candidate_answer or '(minimal)'}\nGenerate ONE specific technical follow-up question to probe their understanding deeper. Be specific, not generic."
+
         try:
             followup_raw = call_llm(followup_system, followup_prompt, prefer="groq") or ""
             followup = followup_raw.strip().strip('"').strip()[:300]
@@ -529,8 +685,19 @@ class AgentReasoningLoop:
                 followup = "תוכל להרחיב על זה?" if language.lower() == "hebrew" else "Can you elaborate on that?"
         except Exception as groq_err:
             logger.error("Groq fallback failed: %s", groq_err)
-            followup = "תוכל לספר לי עוד על זה?" if language.lower() == "hebrew" else "Can you tell me more about that?"
-        
+            if language.lower() == "hebrew":
+                 followup = random.choice([
+                     "תוכל לפרט קצת יותר?",
+                     "האם תוכל להרחיב על הנקודה הזו?",
+                     "ספר לי עוד על הגישה שלך כאן."
+                 ])
+            else:
+                followup = random.choice([
+                    "Can you tell me more about that?",
+                    "Could you elaborate on your approach?",
+                    "Please explain that in more detail."
+                ])
+
         trace.append(ReasoningStep(step_type="tool_result", content={
             "tool": "groq_fallback",
             "result": followup,
@@ -547,21 +714,25 @@ class AgentReasoningLoop:
 
     def _build_initial_message(self, context: AgentContext) -> str:
         """Build the initial message for the agent."""
-        msg = f"""The candidate has just answered question {context.question_index + 1}.
+        msg = f"""The candidate has just answered question {context.question_index + 1} of {context.total_questions}.
 
 Please analyze their response and decide what to do next.
 
 Remember:
 - First, analyze the answer quality using analyze_answer
 - If code was provided, also use evaluate_code
-- Then decide: ask_followup, give_hint, advance_to_next, or end_interview
-- Follow-ups used so far: {context.followup_count}/{context.max_followups}"""
+- Then decide: ask_followup, give_hint, or advance_to_next
+- Follow-ups used so far: {context.followup_count}/{context.max_followups}
+
+IMPORTANT: Use advance_to_next to move to the next question. Do NOT use end_interview unless this is the final question ({context.question_index + 1} of {context.total_questions})."""
 
         if context.should_force_advance():
-            msg += "\n\nNOTE: Maximum follow-ups reached. You should advance to the next question."
+            msg += "\n\nNOTE: Maximum follow-ups reached. You MUST use advance_to_next now."
 
         if context.is_last_question():
-            msg += "\n\nNOTE: This is the last question. After evaluation, use end_interview."
+            msg += "\n\nNOTE: This IS the last question ({context.question_index + 1}/{context.total_questions}). After evaluation, use end_interview."
+        else:
+            msg += f"\n\nNOTE: There are {context.total_questions - context.question_index - 1} more questions after this one. Use advance_to_next to continue."
 
         return msg
 
@@ -621,15 +792,44 @@ Remember:
     ) -> AgentDecision:
         """Make a safe fallback decision with LLM-generated natural message."""
         from backend.services.llm_client import call_llm
-        
+        import json as json_module
+
         trace.append(ReasoningStep(
             step_type="error",
             content=error
         ))
 
+        # Check if code was submitted - if so, evaluate it first
+        user_code = getattr(context, "user_code", None) or ""
+        score = 0.6  # Default score
+
+        if user_code and user_code.strip():
+            # Evaluate the code before making decision
+            try:
+                eval_system = """You are a senior software engineer. Evaluate this code. Be GENEROUS with working solutions.
+SCORING: Correct code = 0.85+, Correct+Efficient = 0.90+, Correct+Efficient+Clean = 0.95+. Only < 0.7 if buggy.
+Return ONLY JSON: {"score": 0.0-1.0, "feedback": "brief"}"""
+                eval_prompt = f"Question: {context.question_text[:500]}\nCode:\n```\n{user_code[:1000]}\n```\nIf correct, score 0.85+. Return JSON only."
+
+                eval_response = call_llm(eval_system, eval_prompt, prefer="groq").strip()
+                if "```" in eval_response:
+                    eval_response = eval_response.split("```")[1].split("```")[0].strip()
+                eval_data = json_module.loads(eval_response)
+                score = max(0.0, min(1.0, float(eval_data.get("score", 0.7))))
+                logger.info(f"Fallback decision evaluated code, score: {score}")
+
+                trace.append(ReasoningStep(step_type="tool_result", content={
+                    "tool": "fallback_code_eval",
+                    "success": True,
+                    "data": {"score": score}
+                }))
+            except Exception as e:
+                logger.error(f"Fallback code evaluation failed: {e}")
+                score = 0.85  # Default to good score for submitted code (benefit of doubt)
+
         # Generate natural message via LLM
         system_prompt = "You are a technical interviewer. Generate ONE brief, natural response (1-2 sentences)."
-        
+
         try:
             if context.should_force_advance():
                 user_prompt = f"You've asked several follow-up questions on '{context.question_text[:100]}'. Generate a brief natural message transitioning to the next question."
@@ -637,27 +837,27 @@ Remember:
                 return AgentDecision(
                     action="advance",
                     message=message or "Thank you for that detailed response. Let's move to the next topic.",
-                    satisfaction_score=0.5,
+                    satisfaction_score=score,
                     reasoning_trace=trace
                 )
-            
+
             if context.is_last_question():
                 user_prompt = "The candidate has completed all interview questions. Generate a brief warm closing message thanking them for their time."
                 message = call_llm(system_prompt, user_prompt, prefer="groq").strip()[:200]
                 return AgentDecision(
                     action="end",
                     message=message or "Thank you for taking the time to participate in this interview.",
-                    satisfaction_score=0.5,
+                    satisfaction_score=score,
                     reasoning_trace=trace
                 )
-            
+
             # Default: generate natural transition to next question
             user_prompt = f"The candidate answered a question about '{context.question_text[:100]}'. Generate a brief natural transition message to move to the next question."
             message = call_llm(system_prompt, user_prompt, prefer="groq").strip()[:200]
             return AgentDecision(
                 action="advance",
                 message=message or "Excellent. Now let's move on to the next question.",
-                satisfaction_score=0.5,
+                satisfaction_score=score,
                 reasoning_trace=trace
             )
         except Exception as e:
@@ -667,20 +867,20 @@ Remember:
                 return AgentDecision(
                     action="advance",
                     message="Thank you for those responses. Let's move forward.",
-                    satisfaction_score=0.5,
+                    satisfaction_score=score,
                     reasoning_trace=trace
                 )
             elif context.is_last_question():
                 return AgentDecision(
                     action="end",
                     message="Thank you for your time today.",
-                    satisfaction_score=0.5,
+                    satisfaction_score=score,
                     reasoning_trace=trace
                 )
             else:
                 return AgentDecision(
                     action="advance",
                     message="Let's continue to the next question.",
-                    satisfaction_score=0.5,
+                    satisfaction_score=score,
                     reasoning_trace=trace
                 )

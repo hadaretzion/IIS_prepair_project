@@ -147,7 +147,7 @@ def generate_with_tools(
 
     try:
         response = client.models.generate_content(
-            model="gemini-1.5-flash-002",
+            model="gemini-2.0-flash",
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,

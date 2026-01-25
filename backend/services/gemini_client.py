@@ -85,7 +85,7 @@ def call_gemini(system_prompt: str, user_prompt: str, timeout: int = 30) -> str:
         full_prompt = f"{system_prompt}\n\nUser Request:\n{user_prompt}"
         
         response = client.models.generate_content(
-            model="gemini-1.5-flash-002",
+            model="gemini-2.0-flash",
             contents=full_prompt,
             config=types.GenerateContentConfig(
                 max_output_tokens=8192,
@@ -109,7 +109,7 @@ def generate_text(prompt: str) -> str:
     
     try:
         response = client.models.generate_content(
-            model="gemini-1.5-flash-002",
+            model="gemini-2.0-flash",
             contents=prompt
         )
         return response.text or ""

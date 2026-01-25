@@ -209,26 +209,40 @@ function InterviewRoom() {
   };
 
   const startInterviewWithQuestion = (question: any, total: number, isResume: boolean = false) => {
+    console.log('[InterviewRoom] Starting with question:', question);
     setCurrentQuestion(question);
     setQuestionStartTime(Date.now());
     setProgress((prev) => ({ ...prev, total }));
     setupQuestionTimers(question);
 
+    // Ensure question text exists
+    const questionText = question?.text || "Could you tell me about yourself and your experience?";
+    console.log('[InterviewRoom] Question text to display:', questionText);
+
     const welcomeMsg = isResume 
       ? "Welcome back! Let's continue your interview."
       : "Welcome! Let's begin the interview. I'll be asking you questions based on your profile. Take your time to respond thoughtfully.";
     
+    // Add welcome message
     addMessage('interviewer', welcomeMsg);
     
-    safeSetTimeout(() => {
-      addMessage('interviewer', question.text);
-      if (voiceOn && ttsSupported()) {
-        speakSequential([
-          isResume ? "Welcome back! Let's continue." : "Welcome! Let's begin the interview.",
-          question.text
-        ]);
-      }
-    }, 500);
+    // Add the first question immediately after welcome (no delay that could fail)
+    console.log('[InterviewRoom] Adding first question to chat');
+    addMessage('interviewer', questionText);
+
+    // TTS can be async/delayed, but chat messages should be immediate
+    if (voiceOn && ttsSupported()) {
+      safeSetTimeout(() => {
+        try {
+          speakSequential([
+            isResume ? "Welcome back! Let's continue." : "Welcome! Let's begin the interview.",
+            questionText
+          ]);
+        } catch (e) {
+          console.error('[InterviewRoom] TTS failed:', e);
+        }
+      }, 100);
+    }
   };
 
   const handleStartRecording = () => {
