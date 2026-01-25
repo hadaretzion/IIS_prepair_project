@@ -1,15 +1,69 @@
 .feedback-placeholder {
   min-height: 100vh;
-  padding: 2rem;
-  background: #f5f5f5;
+  padding: 40px 20px;
+  background: var(--bg-primary);
+  position: relative;
 }
 
-.container {
+.feedback-placeholder::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 400px;
+  background: radial-gradient(ellipse at top, rgba(99, 102, 241, 0.1) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.feedback-placeholder .container {
   max-width: 600px;
   margin: 0 auto;
-  background: white;
-  padding: 2rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: rgba(12, 14, 24, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 48px;
+  border-radius: 24px;
   text-align: center;
+  backdrop-filter: blur(20px);
+  position: relative;
+  animation: fadeIn 0.5s ease;
+  color: #e8ecf5;
+}
+
+.feedback-placeholder h1 {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 16px;
+}
+
+.feedback-placeholder p {
+  color: #d9deeb;
+  line-height: 1.6;
+}
+
+.feedback-placeholder h2,
+.feedback-placeholder h3,
+.feedback-placeholder strong {
+  color: #e8ecf5;
+}
+
+.feedback-placeholder .btn {
+  margin-top: 32px;
+  padding: 14px 28px;
+  background: var(--accent-gradient);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-smooth);
+  font-family: inherit;
+}
+
+.feedback-placeholder .btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(99, 102, 241, 0.4);
 }

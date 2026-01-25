@@ -112,7 +112,11 @@ class InterviewSession(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     ended_at: Optional[datetime] = None
     plan_json: str = Field(default="{}")  # JSON string
+    conversation_state_json: str = Field(default="{}")  # Tracks: current_question_id, followup_count, question_index, etc.
     session_summary_json: Optional[str] = None  # JSON string
+    question_start_time: Optional[datetime] = Field(default=None)  # Tracks when current question started
+    persona: str = Field(default="friendly")  # Interviewer persona: "friendly", "formal", "challenging"
+    language: str = Field(default="english")  # "english", "hebrew"
     
     # Relationships
     user: User = Relationship(back_populates="sessions")
@@ -135,6 +139,12 @@ class InterviewTurn(SQLModel, table=True):
     score_json: str = Field(default="{}")  # JSON object
     topics_json: str = Field(default="[]")  # JSON array
     followup_json: Optional[str] = None  # JSON object or null
+    parent_turn_id: Optional[str] = Field(default=None, foreign_key="interview_turns.id")  # Links follow-ups to parent answer
+    question_number: int = Field(default=0)  # Question progression (0-based), for backward compatibility
+    is_followup: bool = Field(default=False)  # True if this turn is a follow-up to another answer
+    time_spent_seconds: int = Field(default=0)  # Time spent on this question
+    code_analysis_json: Optional[str] = None  # Code quality analysis from agent
+    agent_analysis_json: Optional[str] = None  # Gap analysis from answer analyzer agent
     
     # Relationships
     session: InterviewSession = Relationship(back_populates="turns")
@@ -186,3 +196,43 @@ class UserReadinessSnapshot(SQLModel, table=True):
     
     # Relationships
     user: User = Relationship(back_populates="readiness_snapshots")
+
+
+# 11) Agent Reasoning Traces
+class AgentReasoningTrace(SQLModel, table=True):
+    """Stores the agent's reasoning trace for each interview turn."""
+    __tablename__ = "agent_reasoning_traces"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    turn_id: str = Field(foreign_key="interview_turns.id", index=True)
+    session_id: str = Field(foreign_key="interview_sessions.id", index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # Reasoning data
+    reasoning_json: str = Field(default="[]")  # Full reasoning trace as JSON array
+    tool_calls_json: str = Field(default="[]")  # List of tools called
+    final_decision: str = Field(default="")  # What agent decided: followup, advance, hint, end
+    confidence_score: float = Field(default=0.0)  # Agent's confidence in decision
+
+    # Performance metrics
+    total_iterations: int = Field(default=0)  # Number of reasoning iterations
+    total_tool_calls: int = Field(default=0)  # Total tools executed
+    execution_time_ms: int = Field(default=0)  # Total reasoning time
+
+
+# 12) Agent Tool Executions
+class AgentToolExecution(SQLModel, table=True):
+    """Logs each tool execution for debugging and analysis."""
+    __tablename__ = "agent_tool_executions"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    trace_id: str = Field(foreign_key="agent_reasoning_traces.id", index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # Tool execution details
+    tool_name: str
+    tool_args_json: str = Field(default="{}")
+    tool_result_json: str = Field(default="{}")
+    execution_time_ms: int = Field(default=0)
+    success: bool = Field(default=True)
+    error_message: Optional[str] = None

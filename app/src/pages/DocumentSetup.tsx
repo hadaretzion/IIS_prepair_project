@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { useToast } from '../components/Toast';
+import { FullPageLoader } from '../components/LoadingSpinner';
 import './DocumentSetup.css';
 
 function DocumentSetup() {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [cvText, setCvText] = useState('');
   const [jdText, setJdText] = useState('');
   const [cvFile, setCvFile] = useState<File | null>(null);
@@ -12,37 +15,42 @@ function DocumentSetup() {
   const [cvInputMode, setCvInputMode] = useState<'text' | 'file'>('text');
   const [jdInputMode, setJdInputMode] = useState<'text' | 'file'>('text');
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('');
 
-  const handleAnalyzeAndImprove = async () => {
+  const validateInputs = () => {
     const userId = localStorage.getItem('userId');
     if (!userId) {
-      alert('Please ensure you are logged in');
-      return;
+      showToast('Session expired. Please start again.', 'error');
+      navigate('/');
+      return false;
     }
 
-    // Validate inputs
     if (cvInputMode === 'file' && !cvFile) {
-      alert('Please upload a CV file');
-      return;
+      showToast('Please upload a CV file', 'warning');
+      return false;
     }
     if (cvInputMode === 'text' && !cvText.trim()) {
-      alert('Please provide CV text');
-      return;
+      showToast('Please provide CV text', 'warning');
+      return false;
     }
     if (jdInputMode === 'file' && !jdFile) {
-      alert('Please upload a JD file');
-      return;
+      showToast('Please upload a Job Description file', 'warning');
+      return false;
     }
     if (jdInputMode === 'text' && !jdText.trim()) {
-      alert('Please provide JD text');
-      return;
+      showToast('Please provide Job Description text', 'warning');
+      return false;
     }
+    return true;
+  };
+
+  const handleAnalyzeAndImprove = async () => {
+    if (!validateInputs()) return;
+    const userId = localStorage.getItem('userId')!;
 
     setLoading(true);
-    setUploading(true);
+    setLoadingMessage('Uploading documents...');
     try {
-      // Ingest CV (file or text)
       let cvResult;
       if (cvInputMode === 'file' && cvFile) {
         cvResult = await api.ingestCVPDF(userId, cvFile);
@@ -50,7 +58,6 @@ function DocumentSetup() {
         cvResult = await api.ingestCV(userId, cvText);
       }
 
-      // Ingest JD (file or text)
       let jdResult;
       if (jdInputMode === 'file' && jdFile) {
         jdResult = await api.ingestJDPDF(userId, jdFile);
@@ -58,55 +65,32 @@ function DocumentSetup() {
         jdResult = await api.ingestJD(userId, jdText);
       }
 
-      // Analyze CV
+      setLoadingMessage('Analyzing your CV...');
       await api.analyzeCV(userId, cvResult.cv_version_id, jdResult.job_spec_id);
 
-      // Store IDs for CV improve page
       localStorage.setItem('cvVersionId', cvResult.cv_version_id);
       localStorage.setItem('jobSpecId', jdResult.job_spec_id);
-      // Store text if available (for editing)
       if (cvInputMode === 'text') {
         localStorage.setItem('cvText', cvText);
       }
 
+      showToast('CV analysis complete!', 'success');
       navigate('/cv-improve');
     } catch (error: any) {
-      alert(`Error: ${error.message}`);
+      showToast(error.message || 'Failed to analyze CV. Please try again.', 'error');
     } finally {
       setLoading(false);
-      setUploading(false);
+      setLoadingMessage('');
     }
   };
 
   const handleSkipToInterview = async () => {
-    const userId = localStorage.getItem('userId');
-    if (!userId) {
-      alert('Please ensure you are logged in');
-      return;
-    }
-
-    // Validate inputs
-    if (cvInputMode === 'file' && !cvFile) {
-      alert('Please upload a CV file');
-      return;
-    }
-    if (cvInputMode === 'text' && !cvText.trim()) {
-      alert('Please provide CV text');
-      return;
-    }
-    if (jdInputMode === 'file' && !jdFile) {
-      alert('Please upload a JD file');
-      return;
-    }
-    if (jdInputMode === 'text' && !jdText.trim()) {
-      alert('Please provide JD text');
-      return;
-    }
+    if (!validateInputs()) return;
+    const userId = localStorage.getItem('userId')!;
 
     setLoading(true);
-    setUploading(true);
+    setLoadingMessage('Uploading documents...');
     try {
-      // Ingest CV (file or text)
       let cvResult;
       if (cvInputMode === 'file' && cvFile) {
         cvResult = await api.ingestCVPDF(userId, cvFile);
@@ -114,7 +98,6 @@ function DocumentSetup() {
         cvResult = await api.ingestCV(userId, cvText);
       }
 
-      // Ingest JD (file or text)
       let jdResult;
       if (jdInputMode === 'file' && jdFile) {
         jdResult = await api.ingestJDPDF(userId, jdFile);
@@ -122,185 +105,134 @@ function DocumentSetup() {
         jdResult = await api.ingestJD(userId, jdText);
       }
 
-      // Start interview
-      const sessionResult = await api.startInterview(
-        userId,
-        jdResult.job_spec_id,
-        cvResult.cv_version_id,
-        'direct',
-        { num_open: 4, num_code: 2, duration_minutes: 12 }
-      );
-
-      // Store first question and plan summary for InterviewRoom
-      if (sessionResult.first_question) {
-        localStorage.setItem('firstQuestion', JSON.stringify(sessionResult.first_question));
-      }
-      if (sessionResult.plan_summary) {
-        localStorage.setItem('planSummary', JSON.stringify(sessionResult.plan_summary));
-      }
-      if (sessionResult.total_questions) {
-        localStorage.setItem('totalQuestions', sessionResult.total_questions.toString());
+      // Store IDs for interview settings page
+      localStorage.setItem('cvVersionId', cvResult.cv_version_id);
+      localStorage.setItem('jobSpecId', jdResult.job_spec_id);
+      if (cvInputMode === 'text') {
+        localStorage.setItem('cvText', cvText);
       }
 
-      navigate(`/pre-interview?sessionId=${sessionResult.session_id}`);
+      showToast('Documents uploaded! Choose your interview style.', 'success');
+      // Navigate to interview settings to choose persona
+      navigate('/interview/settings');
     } catch (error: any) {
-      alert(`Error: ${error.message}`);
+      showToast(error.message || 'Failed to upload documents. Please try again.', 'error');
     } finally {
       setLoading(false);
-      setUploading(false);
+      setLoadingMessage('');
+    }
+  };
+
+  const handleFileChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setFile: (file: File | null) => void
+  ) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.type !== 'application/pdf') {
+        showToast('Please select a PDF file', 'warning');
+        return;
+      }
+      setFile(file);
+      showToast(`${file.name} selected`, 'success');
     }
   };
 
   return (
     <div className="document-setup">
+      {loading && <FullPageLoader message={loadingMessage} />}
       <div className="container">
         <h1>Document Setup</h1>
         <p>Upload PDF files or paste text for your CV and Job Description</p>
 
         <div className="input-group">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <label>CV</label>
-            <div>
+          <div className="input-header">
+            <label>CV / Resume</label>
+            <div className="mode-toggle">
               <button
                 type="button"
-                onClick={() => {
-                  setCvInputMode('text');
-                  setCvFile(null);
-                }}
-                style={{
-                  marginRight: '10px',
-                  padding: '5px 10px',
-                  backgroundColor: cvInputMode === 'text' ? '#007bff' : '#ccc',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
+                onClick={() => { setCvInputMode('text'); setCvFile(null); }}
+                className={`toggle-btn ${cvInputMode === 'text' ? 'active' : ''}`}
               >
                 Text
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setCvInputMode('file');
-                  setCvText('');
-                }}
-                style={{
-                  padding: '5px 10px',
-                  backgroundColor: cvInputMode === 'file' ? '#007bff' : '#ccc',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
+                onClick={() => { setCvInputMode('file'); setCvText(''); }}
+                className={`toggle-btn ${cvInputMode === 'file' ? 'active' : ''}`}
               >
                 PDF Upload
               </button>
             </div>
           </div>
           {cvInputMode === 'file' ? (
-            <div>
+            <div className="file-upload">
               <input
                 type="file"
                 accept=".pdf"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    if (file.type !== 'application/pdf') {
-                      alert('Please select a PDF file');
-                      return;
-                    }
-                    setCvFile(file);
-                  }
-                }}
-                style={{ marginBottom: '10px' }}
+                onChange={(e) => handleFileChange(e, setCvFile)}
+                id="cv-file"
               />
-              {cvFile && (
-                <p style={{ color: '#28a745', fontSize: '14px' }}>
-                  ✓ {cvFile.name} selected
-                </p>
-              )}
+              <label htmlFor="cv-file" className="file-label">
+                {cvFile ? (
+                  <span className="file-selected">✓ {cvFile.name}</span>
+                ) : (
+                  <span>Click to upload PDF</span>
+                )}
+              </label>
             </div>
           ) : (
             <textarea
               value={cvText}
               onChange={(e) => setCvText(e.target.value)}
               placeholder="Paste your CV text here..."
-              rows={15}
+              rows={12}
             />
           )}
         </div>
 
         <div className="input-group">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+          <div className="input-header">
             <label>Job Description</label>
-            <div>
+            <div className="mode-toggle">
               <button
                 type="button"
-                onClick={() => {
-                  setJdInputMode('text');
-                  setJdFile(null);
-                }}
-                style={{
-                  marginRight: '10px',
-                  padding: '5px 10px',
-                  backgroundColor: jdInputMode === 'text' ? '#007bff' : '#ccc',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
+                onClick={() => { setJdInputMode('text'); setJdFile(null); }}
+                className={`toggle-btn ${jdInputMode === 'text' ? 'active' : ''}`}
               >
                 Text
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setJdInputMode('file');
-                  setJdText('');
-                }}
-                style={{
-                  padding: '5px 10px',
-                  backgroundColor: jdInputMode === 'file' ? '#007bff' : '#ccc',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
+                onClick={() => { setJdInputMode('file'); setJdText(''); }}
+                className={`toggle-btn ${jdInputMode === 'file' ? 'active' : ''}`}
               >
                 PDF Upload
               </button>
             </div>
           </div>
           {jdInputMode === 'file' ? (
-            <div>
+            <div className="file-upload">
               <input
                 type="file"
                 accept=".pdf"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    if (file.type !== 'application/pdf') {
-                      alert('Please select a PDF file');
-                      return;
-                    }
-                    setJdFile(file);
-                  }
-                }}
-                style={{ marginBottom: '10px' }}
+                onChange={(e) => handleFileChange(e, setJdFile)}
+                id="jd-file"
               />
-              {jdFile && (
-                <p style={{ color: '#28a745', fontSize: '14px' }}>
-                  ✓ {jdFile.name} selected
-                </p>
-              )}
+              <label htmlFor="jd-file" className="file-label">
+                {jdFile ? (
+                  <span className="file-selected">✓ {jdFile.name}</span>
+                ) : (
+                  <span>Click to upload PDF</span>
+                )}
+              </label>
             </div>
           ) : (
             <textarea
               value={jdText}
               onChange={(e) => setJdText(e.target.value)}
               placeholder="Paste the job description here..."
-              rows={15}
+              rows={12}
             />
           )}
         </div>
@@ -309,20 +241,20 @@ function DocumentSetup() {
           <button
             className="btn btn-primary"
             onClick={handleAnalyzeAndImprove}
-            disabled={loading || uploading || 
+            disabled={loading || 
               (cvInputMode === 'file' ? !cvFile : !cvText.trim()) ||
               (jdInputMode === 'file' ? !jdFile : !jdText.trim())}
           >
-            {uploading ? 'Uploading...' : loading ? 'Processing...' : 'Analyze & Improve CV'}
+            Analyze & Improve CV
           </button>
           <button
             className="btn btn-secondary"
             onClick={handleSkipToInterview}
-            disabled={loading || uploading ||
+            disabled={loading ||
               (cvInputMode === 'file' ? !cvFile : !cvText.trim()) ||
               (jdInputMode === 'file' ? !jdFile : !jdText.trim())}
           >
-            {uploading ? 'Uploading...' : loading ? 'Starting...' : 'Skip to Interview'}
+            Skip to Interview
           </button>
         </div>
       </div>

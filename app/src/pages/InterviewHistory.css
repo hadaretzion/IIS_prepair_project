@@ -1,0 +1,244 @@
+.interview-history {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+  padding: 2rem;
+}
+
+.interview-history .container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+}
+
+.history-header h1 {
+  font-size: 2rem;
+  color: #fff;
+  margin: 0 0 0.5rem 0;
+}
+
+.history-header p {
+  color: #9ca3af;
+  margin: 0;
+}
+
+/* No interviews state */
+.no-interviews {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.no-interviews-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.no-interviews h2 {
+  color: #fff;
+  margin: 0 0 0.5rem 0;
+}
+
+.no-interviews p {
+  color: #9ca3af;
+  margin: 0 0 2rem 0;
+}
+
+/* Interview list */
+.interviews-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.interview-card {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.interview-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(99, 102, 241, 0.5);
+  transform: translateY(-2px);
+}
+
+.interview-card.incomplete {
+  border-left: 3px solid #f59e0b;
+}
+
+.interview-card.completed {
+  border-left: 3px solid #10b981;
+}
+
+.interview-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.interview-info h3 {
+  color: #fff;
+  font-size: 1.25rem;
+  margin: 0 0 0.75rem 0;
+}
+
+.interview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #9ca3af;
+  font-size: 0.875rem;
+}
+
+.meta-item svg {
+  width: 16px;
+  height: 16px;
+}
+
+.mode-badge {
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+}
+
+/* Score circle */
+.interview-score {
+  text-align: center;
+}
+
+.score-circle {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.25rem;
+}
+
+.score-circle.score-high {
+  background: rgba(16, 185, 129, 0.2);
+  border: 2px solid #10b981;
+}
+
+.score-circle.score-medium {
+  background: rgba(245, 158, 11, 0.2);
+  border: 2px solid #f59e0b;
+}
+
+.score-circle.score-low {
+  background: rgba(239, 68, 68, 0.2);
+  border: 2px solid #ef4444;
+}
+
+.score-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.score-label {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+/* Status section */
+.interview-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+}
+
+.status-badge svg {
+  width: 16px;
+  height: 16px;
+}
+
+.status-badge.completed {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.status-badge.incomplete {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+
+.view-details {
+  color: #6366f1;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* Actions */
+.history-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .interview-history {
+    padding: 1rem;
+  }
+
+  .history-header {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .interview-main {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .interview-score {
+    align-self: flex-start;
+  }
+
+  .interview-meta {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .history-actions {
+    flex-direction: column;
+  }
+
+  .history-actions .btn {
+    width: 100%;
+  }
+}

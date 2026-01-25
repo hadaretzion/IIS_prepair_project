@@ -1,11 +1,14 @@
 """PrepAIr Backend - FastAPI main application."""
 
 import logging
+import traceback
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 from backend.db import init_db
-from backend.routers import users, cv, jd, interview, progress
+from backend.routers import users, cv, jd, interview, progress, tts
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -17,11 +20,11 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware (allow app dev origin)
+# CORS middleware (allow all origins for Replit environment)
 # IMPORTANT: CORS middleware must be added BEFORE routers
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",  # Allow localhost on any port
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,6 +37,7 @@ app.include_router(cv.router)
 app.include_router(jd.router)
 app.include_router(interview.router)
 app.include_router(progress.router)
+app.include_router(tts.router)
 
 
 @app.on_event("startup")
@@ -72,6 +76,31 @@ async def health():
     return {"status": "healthy"}
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors with user-friendly messages."""
+    errors = exc.errors()
+    messages = []
+    for error in errors:
+        field = ".".join(str(loc) for loc in error.get("loc", []))
+        msg = error.get("msg", "Invalid value")
+        messages.append(f"{field}: {msg}")
+    
+    logger.warning(f"Validation error: {messages}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "; ".join(messages) if messages else "Invalid request data"}
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle unexpected errors gracefully."""
+    logger.error(f"Unhandled error: {exc}\n{traceback.format_exc()}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred. Please try again."}
+    )
 
 
 if __name__ == "__main__":

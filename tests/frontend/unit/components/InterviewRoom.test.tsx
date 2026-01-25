@@ -6,7 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 jest.mock('../../../../app/src/api/client', () => ({
   api: {
     nextInterview: jest.fn().mockResolvedValue({
-      interviewer_message: 'Thank you for your answer.',
+      interviewer_message: 'Got it - let\'s keep going.',
       next_question: { text: 'What is your greatest strength?', type: 'open' },
       is_done: false,
       progress: { turn_index: 1, total: 5 },

@@ -1,23 +1,8 @@
-"""FastAPI application for PrepAIr Interview Simulator."""
+"""Deprecated legacy API module. Use backend/routers/interview.py instead."""
 
-from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
-from sqlmodel import Session, select
-from typing import Optional, Dict, Any
-import hashlib
-import json
-from datetime import datetime
-
-from src.database import init_db, get_session, engine
-from src.models.database import (
-    User, JobSpec, InterviewSession, InterviewMode,
-    QuestionBank, QuestionHistory, InterviewTurn
+raise RuntimeError(
+    "Legacy interview API is disabled. Use backend.main:app and backend/routers/interview.py instead."
 )
-from src.interview.gemini_helpers import extract_role_profile
-from src.interview.selector import build_interview_plan, check_plan_diversity
-from src.interview.engine import get_next_question, process_answer
-from src.config import DEFAULT_NUM_OPEN, DEFAULT_NUM_CODE, DEFAULT_DURATION_MINUTES
-from src.ingest import main as ingest_data
 
 app = FastAPI(title="PrepAIr Interview Simulator API")
 

@@ -1,0 +1,44 @@
+modules = ["web", "nodejs-20", "python-3.11"]
+[agent]
+expertMode = true
+integrations = ["python_gemini_ai_integrations:1.0.0"]
+
+[nix]
+channel = "stable-25_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Frontend"
+
+[[workflows.workflow]]
+name = "Frontend"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "uvicorn backend.main:app --host 0.0.0.0 --port 8000 & cd app && npm run dev"
+waitForPort = 5000
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 8000
+externalPort = 5000
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["bash", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port 8000 & cd app && npx vite preview --host 0.0.0.0 --port 5000"]
+build = ["bash", "-c", "cd app && npm run build"]

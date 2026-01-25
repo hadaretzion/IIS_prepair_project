@@ -41,6 +41,7 @@ def test_interview_start_next_end(client, db_session):
             "user_transcript": "I am a backend engineer.",
             "user_code": None,
             "is_followup": False,
+            "elapsed_seconds": 0,
         },
     )
     assert next_response.status_code == 200

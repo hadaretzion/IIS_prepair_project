@@ -11,8 +11,9 @@ pydantic>=2.0.0
 # Environment variables
 python-dotenv>=1.0.0
 
-# LLM integration (Gemini 2.5 Pro)
-google-generativeai>=0.3.0
+# LLM integration (Gemini via Replit AI Integrations)
+google-genai>=1.0.0
+tenacity>=8.0.0
 
 # PDF processing
 pdfplumber>=0.10.0

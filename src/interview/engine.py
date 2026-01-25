@@ -6,6 +6,20 @@ from datetime import datetime
 from sqlmodel import Session, select
 from src.models.database import InterviewSession, InterviewTurn, QuestionBank, UserSkillState, QuestionHistory, JobSpec
 from src.interview.gemini_helpers import score_answer, maybe_generate_followup
+
+ACKNOWLEDGEMENTS = [
+    "Got it - let's keep going.",
+    "Understood. Let's move to the next topic.",
+    "Noted. Here's the next question.",
+    "Alright, let's continue.",
+]
+
+
+def acknowledgement_for_turn(turn_number: int) -> str:
+    """Return a varied acknowledgement so the interviewer feels natural."""
+    if not ACKNOWLEDGEMENTS:
+        return "Let's keep going."
+    return ACKNOWLEDGEMENTS[turn_number % len(ACKNOWLEDGEMENTS)]
 def get_next_question(
     session: Session,
     interview_session: InterviewSession,
@@ -108,7 +122,7 @@ def process_answer(
         question_text=question.question_text,
         user_transcript=user_transcript,
         user_code=user_code,
-        interviewer_message="Thank you for your answer.",
+        interviewer_message=acknowledgement_for_turn(turn_number),
         followup_question=followup,
         score_json=json.dumps(score_json),
         turn_number=turn_number,
@@ -133,9 +147,10 @@ def process_answer(
     session.commit()
     
     # Build response
-    interviewer_message = "Thank you for your answer."
+    acknowledgement = acknowledgement_for_turn(turn_number)
+    interviewer_message = acknowledgement
     if followup:
-        interviewer_message += f" {followup}"
+        interviewer_message = f"{acknowledgement} {followup}"
     
     # Get next question
     next_question_data = None

@@ -2,12 +2,42 @@
 
 import json
 import random
+import re
 from typing import Dict, Any, List, Optional, Set
 from sqlmodel import Session, select
 from backend.models import (
     QuestionBank, QuestionHistory, InterviewSession, InterviewTurn, JobSpec, QuestionType
 )
 from datetime import datetime, timedelta
+
+
+SENSITIVE_PHRASES = (
+    "leave your current company",
+    "leave your current job",
+    "why do you want to leave your current company",
+    "why do you want to leave your current job",
+)
+
+
+UNSAFE_KEYWORD_PATTERN = re.compile(
+    r"\b("
+    r"age|married|marital|pregnan\w*|children|kids|family planning|religion|religious|"
+    r"citizenship|nationality|ethnicity|race|racial|sexual orientation|gender identity|gender|"
+    r"political affiliation|disability|medical condition|health condition|birth\s?date"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_question_allowed(question_text: str) -> bool:
+    """Filter out boundary-crossing or inappropriate interview questions."""
+    text = question_text or ""
+    normalized = text.lower()
+    if any(phrase in normalized for phrase in SENSITIVE_PHRASES):
+        return False
+    if UNSAFE_KEYWORD_PATTERN.search(text):
+        return False
+    return True
 
 
 def build_interview_plan(
@@ -40,10 +70,21 @@ def build_interview_plan(
             "created_from": {...}
         }
     """
-    num_open = settings.get("num_open", 4)
-    num_code = settings.get("num_code", 2)
-    duration_minutes = settings.get("duration_minutes", 12)
-    strict_mode = settings.get("strict_mode", "realistic")
+    # Handle both dict and Pydantic model for settings
+    if hasattr(settings, 'num_open'):
+        # Pydantic model
+        num_open = settings.num_open if settings.num_open is not None else 4
+        num_code = settings.num_code if settings.num_code is not None else 2
+        duration_minutes = settings.duration_minutes if settings.duration_minutes is not None else 12
+        strict_mode = getattr(settings, 'strict_mode', 'realistic') or 'realistic'
+        question_style = getattr(settings, 'question_style', 50) or 50  # 0=technical, 100=personal
+    else:
+        # Dict (legacy support)
+        num_open = settings.get("num_open", 4)
+        num_code = settings.get("num_code", 2)
+        duration_minutes = settings.get("duration_minutes", 12)
+        strict_mode = settings.get("strict_mode", "realistic")
+        question_style = settings.get("question_style", 50)
     
     # Get job spec and role profile
     job_spec = session.get(JobSpec, job_spec_id)
@@ -56,6 +97,10 @@ def build_interview_plan(
     # Get recent question IDs to exclude (last 3 sessions or last X days)
     recent_question_ids = _get_recent_question_ids(session, user_id, job_spec_id, max_days=7, max_sessions=3)
     
+    # Build style weights based on question_style slider (0=technical, 100=personal)
+    # These will be used to adjust question selection scoring
+    style_weights = _compute_style_weights(question_style)
+    
     # Build plan items
     items = []
     slot = 0
@@ -63,7 +108,7 @@ def build_interview_plan(
     # Section 1: Open questions
     open_questions = _select_questions(
         session, QuestionType.OPEN, num_open, topic_weights, 
-        recent_question_ids, user_id, job_spec_id
+        recent_question_ids, user_id, job_spec_id, style_weights
     )
     
     for q in open_questions:
@@ -84,7 +129,7 @@ def build_interview_plan(
     # Section 2: Code questions (with adaptive candidates)
     code_questions = _select_questions(
         session, QuestionType.CODE, num_code * 3, topic_weights,
-        recent_question_ids, user_id, job_spec_id
+        recent_question_ids, user_id, job_spec_id, style_weights
     )
     
     # Group by difficulty
@@ -195,6 +240,94 @@ def _compute_match_score(topics: List[str], topic_weights: Dict[str, float]) -> 
     return score / max(1, len(topics))  # Normalize
 
 
+# Topic categories for question style filtering
+TECHNICAL_TOPICS = {
+    'algorithms', 'data structures', 'system design', 'coding', 'architecture',
+    'databases', 'api', 'performance', 'scalability', 'testing', 'debugging',
+    'security', 'networking', 'distributed systems', 'concurrency', 'optimization',
+    'design patterns', 'oop', 'functional programming', 'sql', 'nosql', 'cache',
+    'microservices', 'rest', 'graphql', 'devops', 'ci/cd', 'cloud', 'aws', 'azure',
+    'docker', 'kubernetes', 'linux', 'git', 'python', 'javascript', 'java', 'c++',
+    'react', 'node', 'machine learning', 'ai', 'data science'
+}
+
+PERSONAL_TOPICS = {
+    'teamwork', 'leadership', 'communication', 'motivation', 'career', 'goals',
+    'conflict', 'collaboration', 'management', 'mentorship', 'culture', 'values',
+    'work-life', 'growth', 'learning', 'feedback', 'challenges', 'achievements',
+    'strengths', 'weaknesses', 'failure', 'success', 'stress', 'pressure',
+    'decision making', 'problem solving', 'creativity', 'innovation', 'initiative',
+    'adaptability', 'flexibility', 'priorities', 'time management', 'organization',
+    'remote work', 'travel', 'relocation', 'salary', 'benefits', 'passion'
+}
+
+
+def _compute_style_weights(question_style: int) -> Dict[str, float]:
+    """
+    Compute topic style weights based on the question_style slider.
+    
+    Args:
+        question_style: 0 = technical, 100 = personal
+    
+    Returns:
+        Dict with 'technical_boost' and 'personal_boost' multipliers
+    """
+    # Normalize to 0-1 range
+    style_ratio = question_style / 100.0
+    
+    # Calculate boosts (1.0 = neutral, >1 = boost, <1 = penalize)
+    # At 0: technical gets 2.0 boost, personal gets 0.3
+    # At 50: both get 1.0 (neutral)
+    # At 100: technical gets 0.3, personal gets 2.0
+    technical_boost = 2.0 - (1.7 * style_ratio)  # 2.0 -> 0.3
+    personal_boost = 0.3 + (1.7 * style_ratio)   # 0.3 -> 2.0
+    
+    return {
+        'technical_boost': technical_boost,
+        'personal_boost': personal_boost
+    }
+
+
+def _get_topic_style_score(topics: List[str], style_weights: Dict[str, float]) -> float:
+    """
+    Calculate a style adjustment score for a question based on its topics.
+    
+    Returns a multiplier to adjust the base match score.
+    """
+    if not topics:
+        return 1.0  # Neutral
+    
+    technical_count = 0
+    personal_count = 0
+    
+    for topic in topics:
+        topic_lower = topic.lower()
+        # Check technical match
+        for tech_topic in TECHNICAL_TOPICS:
+            if tech_topic in topic_lower or topic_lower in tech_topic:
+                technical_count += 1
+                break
+        # Check personal match
+        for pers_topic in PERSONAL_TOPICS:
+            if pers_topic in topic_lower or topic_lower in pers_topic:
+                personal_count += 1
+                break
+    
+    # Calculate weighted score
+    total = len(topics)
+    if total == 0:
+        return 1.0
+    
+    tech_ratio = technical_count / total
+    pers_ratio = personal_count / total
+    
+    # Apply style weights
+    multiplier = 1.0 + (tech_ratio * (style_weights['technical_boost'] - 1.0)) + \
+                 (pers_ratio * (style_weights['personal_boost'] - 1.0))
+    
+    return max(0.1, multiplier)  # Floor at 0.1 to never fully exclude
+
+
 def _select_questions(
     session: Session,
     question_type: QuestionType,
@@ -202,25 +335,35 @@ def _select_questions(
     topic_weights: Dict[str, float],
     exclude_ids: Set[str],
     user_id: str,
-    job_spec_id: str
+    job_spec_id: str,
+    style_weights: Optional[Dict[str, float]] = None
 ) -> List[QuestionBank]:
-    """Select questions with weighted sampling and diversity."""
+    """Select questions with weighted sampling, diversity, and style preference."""
+    # Default style weights if not provided
+    if style_weights is None:
+        style_weights = {'technical_boost': 1.0, 'personal_boost': 1.0}
+    
     # Get candidates
     query = select(QuestionBank).where(QuestionBank.question_type == question_type)
     candidates = list(session.exec(query).all())
     
-    # Filter excluded
-    candidates = [q for q in candidates if q.id not in exclude_ids]
+    # Filter excluded and boundary-crossing questions
+    candidates = [
+        q for q in candidates
+        if q.id not in exclude_ids and _is_question_allowed(q.question_text)
+    ]
     
     if not candidates:
         return []
     
-    # Score candidates
+    # Score candidates (combine role match score with style preference)
     scored = []
     for q in candidates:
         topics = json.loads(q.topics_json or "[]")
-        score = _compute_match_score(topics, topic_weights)
-        scored.append((q, score))
+        base_score = _compute_match_score(topics, topic_weights)
+        style_multiplier = _get_topic_style_score(topics, style_weights)
+        final_score = base_score * style_multiplier
+        scored.append((q, final_score))
     
     # Sort by score
     scored.sort(key=lambda x: x[1], reverse=True)

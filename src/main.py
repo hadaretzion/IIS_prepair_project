@@ -1,7 +1,5 @@
-"""Main entry point for PrepAIr backend API server."""
+"""Deprecated legacy entrypoint. Use backend/main.py instead."""
 
-from src.api.interview import app
-import uvicorn
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+raise RuntimeError(
+    "Legacy backend entrypoint is disabled. Use backend/main.py (uvicorn backend.main:app) instead."
+)

@@ -70,7 +70,7 @@ function FeedbackPlaceholder() {
     );
   }
 
-  const turns = sessionData.turns;
+  const turns = Array.isArray(sessionData.turns) ? sessionData.turns : [];
   const totalTurns = turns.length;
   
   // Calculate overall scores
@@ -80,13 +80,12 @@ function FeedbackPlaceholder() {
   const strongTopics = new Set<string>();
 
   turns.forEach((turn: any) => {
-    const score = turn.score_json;
+    const score = turn?.score_json;
     if (score && typeof score.overall === 'number') {
       totalScore += score.overall;
       scoreCount++;
       
-      // Track topics based on performance
-      const topics = turn.topics_json || [];
+      const topics = Array.isArray(turn?.topics_json) ? turn.topics_json : [];
       if (score.overall < 0.6) {
         topics.forEach((topic: string) => weakTopics.add(topic));
       } else if (score.overall >= 0.8) {
@@ -105,7 +104,7 @@ function FeedbackPlaceholder() {
   if (averageScore < 70) {
     recommendations.push('Consider practicing more interview questions to improve your responses');
   }
-  if (turns.some((t: any) => !t.user_code && t.question_id.startsWith('code:'))) {
+  if (turns.some((t: any) => typeof t?.question_id === 'string' && t.question_id.startsWith('code:') && !t.user_code)) {
     recommendations.push('Try to provide code solutions for technical questions');
   }
 
@@ -114,23 +113,23 @@ function FeedbackPlaceholder() {
       <div className="container">
         <h1>Interview Feedback</h1>
         
-        <div style={{ marginBottom: '30px' }}>
+        <div style={{ marginBottom: '30px', color: '#e8ecf5' }}>
           <h2>Overall Performance</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
             <div>
               <div style={{ fontSize: '48px', fontWeight: 'bold', color: averageScore >= 80 ? '#28a745' : averageScore >= 60 ? '#ffc107' : '#dc3545' }}>
                 {averageScore.toFixed(1)}%
               </div>
-              <div style={{ fontSize: '14px', color: '#666' }}>Average Score</div>
+              <div style={{ fontSize: '14px', color: '#cbd5e1' }}>Average Score</div>
             </div>
             <div>
               <div style={{ fontSize: '24px', fontWeight: 'bold' }}>{totalTurns}</div>
-              <div style={{ fontSize: '14px', color: '#666' }}>Questions Answered</div>
+              <div style={{ fontSize: '14px', color: '#cbd5e1' }}>Questions Answered</div>
             </div>
           </div>
         </div>
 
-        <div style={{ marginBottom: '30px' }}>
+        <div style={{ marginBottom: '30px', color: '#e8ecf5' }}>
           <h2>Per-Question Breakdown</h2>
           {turns.map((turn: any, index: number) => {
             const score = turn.score_json || {};
@@ -140,11 +139,11 @@ function FeedbackPlaceholder() {
 
             return (
               <div key={turn.id} style={{ 
-                border: '1px solid #ddd', 
-                borderRadius: '8px', 
+                border: '1px solid rgba(255,255,255,0.08)', 
+                borderRadius: '12px', 
                 padding: '20px', 
                 marginBottom: '20px',
-                backgroundColor: '#f9f9f9'
+                backgroundColor: 'rgba(255,255,255,0.05)'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '15px' }}>
                   <h3 style={{ margin: 0 }}>Question {index + 1}</h3>
@@ -159,19 +158,19 @@ function FeedbackPlaceholder() {
 
                 <div style={{ marginBottom: '15px' }}>
                   <strong>Question:</strong>
-                  <p style={{ marginTop: '5px', color: '#333' }}>{turn.question_snapshot}</p>
+                  <p style={{ marginTop: '5px', color: '#e8ecf5' }}>{turn.question_snapshot}</p>
                 </div>
 
                 <div style={{ marginBottom: '15px' }}>
                   <strong>Your Answer:</strong>
-                  <p style={{ marginTop: '5px', color: '#666', fontStyle: 'italic' }}>
+                  <p style={{ marginTop: '5px', color: '#d9deeb', fontStyle: 'italic' }}>
                     {turn.user_transcript || '(No transcript provided)'}
                   </p>
                   {turn.user_code && (
                     <div style={{ marginTop: '10px' }}>
                       <strong>Code:</strong>
                       <pre style={{ 
-                        backgroundColor: '#f4f4f4', 
+                        backgroundColor: 'rgba(0,0,0,0.5)', 
                         padding: '10px', 
                         borderRadius: '4px',
                         overflow: 'auto',
@@ -189,12 +188,12 @@ function FeedbackPlaceholder() {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginTop: '10px' }}>
                       {Object.entries(rubric).map(([key, value]: [string, any]) => (
                         <div key={key} style={{ 
-                          padding: '8px', 
-                          backgroundColor: '#fff', 
-                          borderRadius: '4px',
-                          border: '1px solid #ddd'
+                          padding: '10px', 
+                          backgroundColor: 'rgba(255,255,255,0.05)', 
+                          borderRadius: '8px',
+                          border: '1px solid rgba(255,255,255,0.08)'
                         }}>
-                          <div style={{ fontSize: '12px', color: '#666', textTransform: 'capitalize' }}>{key}</div>
+                          <div style={{ fontSize: '12px', color: '#cbd5e1', textTransform: 'capitalize' }}>{key}</div>
                           <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
                             {((value || 0) * 100).toFixed(0)}%
                           </div>
@@ -207,14 +206,14 @@ function FeedbackPlaceholder() {
                 {topics.length > 0 && (
                   <div style={{ marginBottom: '15px' }}>
                     <strong>Topics:</strong>
-                    <div style={{ marginTop: '5px' }}>
+                    <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                       {topics.map((topic: string, i: number) => (
                         <span key={i} style={{
                           display: 'inline-block',
-                          padding: '4px 8px',
-                          margin: '2px',
-                          backgroundColor: '#e3f2fd',
-                          borderRadius: '4px',
+                          padding: '6px 10px',
+                          backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                          color: '#cdd5ff',
+                          borderRadius: '999px',
                           fontSize: '12px'
                         }}>
                           {topic}
@@ -227,9 +226,9 @@ function FeedbackPlaceholder() {
                 {score.notes && score.notes.length > 0 && (
                   <div>
                     <strong>Notes:</strong>
-                    <ul style={{ marginTop: '5px', paddingLeft: '20px' }}>
+                      <ul style={{ marginTop: '5px', paddingLeft: '20px', color: '#d9deeb' }}>
                       {score.notes.map((note: string, i: number) => (
-                        <li key={i} style={{ color: '#666' }}>{note}</li>
+                        <li key={i} style={{ color: '#cbd5e1' }}>{note}</li>
                       ))}
                     </ul>
                   </div>

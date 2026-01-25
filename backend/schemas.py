@@ -1,13 +1,13 @@
 """Pydantic schemas for API requests and responses."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 
 # User schemas
 class UserEnsureRequest(BaseModel):
-    user_id: Optional[str] = None
+    user_id: Optional[str] = Field(None, max_length=100)
 
 class UserEnsureResponse(BaseModel):
     user_id: str
@@ -15,8 +15,15 @@ class UserEnsureResponse(BaseModel):
 
 # CV schemas
 class CVIngestRequest(BaseModel):
-    user_id: str
-    cv_text: str
+    user_id: str = Field(..., min_length=1, max_length=100)
+    cv_text: str = Field(..., min_length=50, max_length=50000)
+    
+    @field_validator('cv_text')
+    @classmethod
+    def validate_cv_text(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError('CV text cannot be empty')
+        return v.strip()
 
 
 class CVIngestResponse(BaseModel):
@@ -36,6 +43,7 @@ class CVAnalyzeResponse(BaseModel):
     gaps: List[str]
     suggestions: List[str]
     role_focus: Dict[str, Any]
+    cv_text: str
 
 
 class CVSaveRequest(BaseModel):
@@ -48,10 +56,35 @@ class CVSaveResponse(BaseModel):
     new_cv_version_id: str
 
 
+class CVImprovedSection(BaseModel):
+    section: str
+    original: str
+    improved: str
+    explanation: str
+
+
+class CVImprovements(BaseModel):
+    improved_sections: List[CVImprovedSection] = []
+    new_content_suggestions: List[str] = []
+    formatting_tips: List[str] = []
+
+
+class CVImproveResponse(BaseModel):
+    success: bool
+    improvements: CVImprovements
+
+
 # JD schemas
 class JDIngestRequest(BaseModel):
-    user_id: str
-    jd_text: str
+    user_id: str = Field(..., min_length=1, max_length=100)
+    jd_text: str = Field(..., min_length=50, max_length=50000)
+    
+    @field_validator('jd_text')
+    @classmethod
+    def validate_jd_text(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError('Job description cannot be empty')
+        return v.strip()
 
 
 class JDIngestResponse(BaseModel):
@@ -69,17 +102,23 @@ class JDGetResponse(BaseModel):
 
 
 # Interview schemas
+class InterviewSettings(BaseModel):
+    """Interview configuration settings."""
+    num_open: int = 4
+    num_code: int = 2
+    duration_minutes: int = 12
+    strict_mode: str = "realistic"
+    persona: str = "friendly"  # "friendly", "formal", "challenging"
+    question_style: int = 50  # 0 = professional/technical, 100 = personal/behavioral
+    language: str = "english"  # "english" or "hebrew"
+
+
 class InterviewStartRequest(BaseModel):
     user_id: str
     job_spec_id: str
     cv_version_id: Optional[str] = None
     mode: str = "direct"  # "direct" | "after_cv"
-    settings: Dict[str, Any] = Field(default_factory=lambda: {
-        "num_open": 4,
-        "num_code": 2,
-        "duration_minutes": 12,
-        "strict_mode": "realistic"
-    })
+    settings: InterviewSettings = Field(default_factory=InterviewSettings)
 
 
 class InterviewStartResponse(BaseModel):
@@ -94,6 +133,7 @@ class InterviewNextRequest(BaseModel):
     user_transcript: str
     user_code: Optional[str] = None
     is_followup: bool = False
+    elapsed_seconds: Optional[int] = None
     client_metrics: Optional[Dict[str, Any]] = None
 
 
@@ -103,6 +143,10 @@ class InterviewNextResponse(BaseModel):
     next_question: Optional[Dict[str, Any]] = None
     is_done: bool
     progress: Dict[str, int]
+    # Agent-specific fields (optional, for debugging and transparency)
+    agent_decision: Optional[str] = None  # "followup", "advance", "hint", "end"
+    agent_confidence: Optional[float] = None  # 0.0-1.0 satisfaction score
+    agent_reasoning: Optional[Dict[str, Any]] = None  # Full reasoning trace (if debug=true)
 
 
 class InterviewEndRequest(BaseModel):
@@ -111,6 +155,10 @@ class InterviewEndRequest(BaseModel):
 
 class InterviewEndResponse(BaseModel):
     ok: bool
+
+
+class InterviewSkipToCodeRequest(BaseModel):
+    session_id: str
 
 
 # Progress schemas
