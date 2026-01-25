@@ -3,7 +3,8 @@
 import uuid
 import json
 import hashlib
-from fastapi import APIRouter, Depends, HTTPException
+import io
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlmodel import Session
 from backend.db import get_session
 from backend.models import User, CVVersion, CVAnalysisResult, JobSpec
@@ -43,6 +44,52 @@ def ingest_cv(
         cv_version_id=cv_version.id,
         cv_profile_json=None  # Optional minimal profile
     )
+
+
+@router.post("/ingest-pdf", response_model=CVIngestResponse)
+async def ingest_cv_pdf(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    session: Session = Depends(get_session)
+):
+    """Ingest CV from PDF file and create CV version."""
+    # Ensure user exists
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Validate file type
+    if not file.filename or not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+    
+    try:
+        # Read file contents
+        contents = await file.read()
+        pdf_file = io.BytesIO(contents)
+        
+        # Extract text from PDF
+        from src.shared.pdf_extractor import extract_pdf_text
+        cv_text = extract_pdf_text(pdf_file)
+        
+        # Create CV version using extracted text
+        cv_version = CVVersion(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            cv_text=cv_text,
+            source="pdf_upload"
+        )
+        session.add(cv_version)
+        session.commit()
+        session.refresh(cv_version)
+        
+        return CVIngestResponse(
+            cv_version_id=cv_version.id,
+            cv_profile_json=None
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process PDF: {str(e)}")
 
 
 @router.post("/analyze", response_model=CVAnalyzeResponse)

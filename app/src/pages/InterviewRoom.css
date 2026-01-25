@@ -11,6 +11,7 @@
   padding: 2rem;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  color: #222;
 }
 
 .header {
@@ -51,7 +52,7 @@
   z-index: 1;
   margin: 0 auto;
   font-size: 0.9rem;
-  color: #333;
+  color: #222;
 }
 
 .question-section {
@@ -59,11 +60,13 @@
   padding: 1.5rem;
   background: #f9f9f9;
   border-radius: 8px;
+  color: #222;
 }
 
 .question-section h2 {
   margin-top: 0;
   margin-bottom: 1rem;
+  color: #222;
 }
 
 .transcript-section {
@@ -74,6 +77,7 @@
   display: block;
   margin-bottom: 0.5rem;
   font-weight: bold;
+  color: #222;
 }
 
 .transcript-section textarea {
@@ -84,6 +88,8 @@
   font-family: inherit;
   font-size: 1rem;
   resize: vertical;
+  color: #222;
+  background: #fff;
 }
 
 .controls {

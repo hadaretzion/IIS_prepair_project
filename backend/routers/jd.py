@@ -3,7 +3,8 @@
 import json
 import hashlib
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+import io
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlmodel import Session
 from backend.db import get_session
 from backend.models import JobSpec
@@ -56,7 +57,6 @@ def ingest_jd(
         profile_json = json.dumps(role_profile)
     
     # Create job spec
-    from backend.models import JobSpec
     job_spec = JobSpec(
         id=str(uuid.uuid4()),
         jd_hash=jd_hash,
@@ -72,6 +72,85 @@ def ingest_jd(
         jd_hash=job_spec.jd_hash,
         jd_profile_json=role_profile
     )
+
+
+@router.post("/ingest-pdf", response_model=JDIngestResponse)
+async def ingest_jd_pdf(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    session: Session = Depends(get_session)
+):
+    """Ingest JD from PDF file and create/return job spec."""
+    # Validate file type
+    if not file.filename or not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+    
+    try:
+        # Read file contents
+        contents = await file.read()
+        pdf_file = io.BytesIO(contents)
+        
+        # Extract text from PDF
+        from src.shared.pdf_extractor import extract_pdf_text
+        jd_text = extract_pdf_text(pdf_file)
+        
+        # Use existing ingest logic
+        # Compute JD hash
+        jd_hash = hashlib.md5(jd_text.encode()).hexdigest()
+        
+        # Check if job spec already exists
+        from sqlmodel import select
+        existing = session.exec(
+            select(JobSpec).where(JobSpec.jd_hash == jd_hash)
+        ).first()
+        
+        if existing:
+            # Return existing
+            profile = json.loads(existing.jd_profile_json) if existing.jd_profile_json else None
+            return JDIngestResponse(
+                job_spec_id=existing.id,
+                jd_hash=existing.jd_hash,
+                jd_profile_json=profile
+            )
+        
+        # Extract role profile
+        try:
+            role_profile = extract_role_profile("", jd_text)
+            profile_json = json.dumps(role_profile)
+        except Exception as e:
+            print(f"⚠️  Role profile extraction failed: {e}")
+            # Fallback
+            role_profile = {
+                "role_title": "Software Developer",
+                "seniority": "mid",
+                "must_have_topics": [],
+                "nice_to_have_topics": [],
+                "soft_skills": [],
+                "coding_focus": [],
+                "weights": {}
+            }
+            profile_json = json.dumps(role_profile)
+        
+        # Create job spec
+        job_spec = JobSpec(
+            id=str(uuid.uuid4()),
+            jd_hash=jd_hash,
+            jd_text=jd_text,
+            jd_profile_json=profile_json
+        )
+        session.add(job_spec)
+        session.commit()
+        session.refresh(job_spec)
+        
+        return JDIngestResponse(
+            job_spec_id=job_spec.id,
+            jd_hash=job_spec.jd_hash,
+            jd_profile_json=role_profile
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process PDF: {str(e)}")
 
 
 @router.get("/{job_spec_id}", response_model=JDGetResponse)

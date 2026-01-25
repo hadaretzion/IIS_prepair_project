@@ -64,6 +64,18 @@ function CvImprove() {
         'after_cv',
         { num_open: 4, num_code: 2, duration_minutes: 12 }
       );
+
+      // Store first question and plan summary for InterviewRoom
+      if (result.first_question) {
+        localStorage.setItem('firstQuestion', JSON.stringify(result.first_question));
+      }
+      if (result.plan_summary) {
+        localStorage.setItem('planSummary', JSON.stringify(result.plan_summary));
+      }
+      if (result.total_questions) {
+        localStorage.setItem('totalQuestions', result.total_questions.toString());
+      }
+
       navigate(`/pre-interview?sessionId=${result.session_id}`);
     } catch (error: any) {
       alert(`Error starting interview: ${error.message}`);

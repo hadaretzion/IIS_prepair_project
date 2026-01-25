@@ -9,12 +9,31 @@ function PreInterview() {
   const [voiceOn, setVoiceOn] = useState(true);
   const [captionsOn, setCaptionsOn] = useState(true);
   const [realismMode, setRealismMode] = useState('realistic');
+  const [planSummary, setPlanSummary] = useState<any>(null);
+
+  useEffect(() => {
+    // Load plan summary from localStorage
+    const stored = localStorage.getItem('planSummary');
+    if (stored) {
+      try {
+        setPlanSummary(JSON.parse(stored));
+      } catch (e) {
+        console.error('Failed to parse plan summary:', e);
+      }
+    }
+  }, []);
 
   const handleStart = () => {
     if (!sessionId) {
       alert('Session ID missing');
       return;
     }
+    
+    // Store settings in localStorage before navigating
+    localStorage.setItem('voiceOn', voiceOn.toString());
+    localStorage.setItem('captionsOn', captionsOn.toString());
+    localStorage.setItem('realismMode', realismMode);
+    
     navigate(`/interview/${sessionId}`);
   };
 
@@ -26,7 +45,30 @@ function PreInterview() {
 
         <div className="plan-summary">
           <h2>Session Plan</h2>
-          <p>You'll be asked behavioral and technical questions tailored to your CV and job description.</p>
+          {planSummary ? (
+            <div>
+              <p><strong>Total Questions:</strong> {planSummary.total || 'N/A'}</p>
+              {planSummary.sections && planSummary.sections.length > 0 && (
+                <div style={{ marginTop: '15px' }}>
+                  <strong>Breakdown:</strong>
+                  <ul style={{ marginTop: '10px', paddingLeft: '20px' }}>
+                    {planSummary.sections.map((section: any, index: number) => (
+                      <li key={index}>
+                        {section.name || `Section ${index + 1}`}: {section.count || 0} questions
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {!planSummary.sections && planSummary.total && (
+                <p style={{ marginTop: '10px', color: '#666' }}>
+                  Questions will be tailored to your CV and job description.
+                </p>
+              )}
+            </div>
+          ) : (
+            <p>You'll be asked behavioral and technical questions tailored to your CV and job description.</p>
+          )}
         </div>
 
         <div className="settings">

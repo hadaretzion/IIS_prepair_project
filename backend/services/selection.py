@@ -242,7 +242,10 @@ def _select_questions(
         
         # Weighted selection (favor higher scores)
         weights = [s ** 2 for _, s in remaining]
-        chosen_q, chosen_score = random.choices(remaining, weights=weights, k=1)[0]
+        if sum(weights) <= 0:
+            chosen_q, chosen_score = random.choice(remaining)
+        else:
+            chosen_q, chosen_score = random.choices(remaining, weights=weights, k=1)[0]
         
         # Check diversity (Jaccard similarity with selected)
         chosen_topics = set(json.loads(chosen_q.topics_json or "[]"))

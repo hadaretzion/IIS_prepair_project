@@ -1,6 +1,22 @@
 /** API client for PrepAIr backend. */
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+// Backend URL - set via environment or default to localhost
+// In Vite, use VITE_BACKEND_URL env variable
+// In tests, this will be mocked or use the default
+declare const __BACKEND_URL__: string | undefined;
+
+const BACKEND_URL: string = (() => {
+  // Check for build-time injected value
+  if (typeof __BACKEND_URL__ !== 'undefined') {
+    return __BACKEND_URL__;
+  }
+  // Check for process.env (Node/Jest)
+  if (typeof process !== 'undefined' && process.env?.VITE_BACKEND_URL) {
+    return process.env.VITE_BACKEND_URL;
+  }
+  // Default
+  return 'http://localhost:8000';
+})();
 
 async function apiRequest<T>(
   endpoint: string,
@@ -38,6 +54,24 @@ export const api = {
       body: JSON.stringify({ user_id: userId, cv_text: cvText }),
     }),
 
+  ingestCVPDF: async (userId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('user_id', userId);
+    
+    const response = await fetch(`${BACKEND_URL}/api/cv/ingest-pdf`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  },
+
   analyzeCV: (userId: string, cvVersionId: string, jobSpecId: string) =>
     apiRequest<{
       match_score: number;
@@ -62,6 +96,24 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ user_id: userId, jd_text: jdText }),
     }),
+
+  ingestJDPDF: async (userId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('user_id', userId);
+    
+    const response = await fetch(`${BACKEND_URL}/api/jd/ingest-pdf`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  },
 
   // Interview
   startInterview: (userId: string, jobSpecId: string, cvVersionId: string | null, mode: string, settings?: any) =>
@@ -111,4 +163,29 @@ export const api = {
       trend: any[];
       breakdown: any;
     }>(`/api/progress/overview?user_id=${userId}${jobSpecId ? `&job_spec_id=${jobSpecId}` : ''}`),
+
+  // Session
+  getSession: (sessionId: string) =>
+    apiRequest<{
+      id: string;
+      user_id: string;
+      job_spec_id: string;
+      mode: string;
+      created_at: string;
+      ended_at: string | null;
+      plan_json: any;
+      session_summary_json: any;
+      turns: Array<{
+        id: string;
+        turn_index: number;
+        question_id: string;
+        question_snapshot: string;
+        user_transcript: string;
+        user_code: string | null;
+        score_json: any;
+        topics_json: string[];
+        followup_json: any;
+        created_at: string;
+      }>;
+    }>(`/api/interview/session/${sessionId}`),
 };

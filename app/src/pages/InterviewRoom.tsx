@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import { speak, stopSpeaking } from '../voice/tts';
+import { speak, speakSequential, stopSpeaking } from '../voice/tts';
 import { startRecognition, stopRecognition, isSupported as sttSupported } from '../voice/stt';
 import './InterviewRoom.css';
 
@@ -16,6 +16,9 @@ function InterviewRoom() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState({ turn_index: 0, total: 0 });
   const [timer, setTimer] = useState(0);
+  const [interviewerMessage, setInterviewerMessage] = useState<string>('');
+  const [followupQuestion, setFollowupQuestion] = useState<string>('');
+  const [voiceOn, setVoiceOn] = useState(true);
   const stopRecognitionRef = useRef<(() => void) | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -23,6 +26,12 @@ function InterviewRoom() {
     if (!sessionId) {
       navigate('/');
       return;
+    }
+
+    // Load voice settings
+    const storedVoiceOn = localStorage.getItem('voiceOn');
+    if (storedVoiceOn !== null) {
+      setVoiceOn(storedVoiceOn === 'true');
     }
 
     // Start timer
@@ -42,11 +51,33 @@ function InterviewRoom() {
         stopRecognitionRef.current();
       }
     };
-  }, [sessionId]);
+  }, [sessionId, navigate]);
 
   const loadQuestion = async () => {
-    // For MVP, we'll get the first question from the session start
-    // In a full implementation, this would come from the API
+    // Get first question from localStorage (stored in DocumentSetup or CvImprove)
+    const storedFirstQuestion = localStorage.getItem('firstQuestion');
+    const storedTotalQuestions = localStorage.getItem('totalQuestions');
+
+    if (storedFirstQuestion) {
+      try {
+        const firstQuestion = JSON.parse(storedFirstQuestion);
+        setQuestion(firstQuestion);
+        
+        const total = storedTotalQuestions ? parseInt(storedTotalQuestions, 10) : 0;
+        setProgress({ turn_index: 0, total });
+
+        // Speak question if voice is enabled
+        if (voiceOn && firstQuestion.text) {
+          speak(firstQuestion.text);
+        }
+
+        // Clean up localStorage
+        localStorage.removeItem('firstQuestion');
+        localStorage.removeItem('totalQuestions');
+      } catch (error) {
+        console.error('Failed to load first question:', error);
+      }
+    }
   };
 
   const handleStartRecording = () => {
@@ -89,18 +120,50 @@ function InterviewRoom() {
         userCode.trim() || undefined
       );
 
+      // Clear previous messages
+      setInterviewerMessage('');
+      setFollowupQuestion('');
+
       if (result.is_done) {
         navigate(`/done/${sessionId}`);
       } else {
+        // Set interviewer message and follow-up if present
+        if (result.interviewer_message) {
+          setInterviewerMessage(result.interviewer_message);
+        }
+        if (result.followup_question?.text) {
+          setFollowupQuestion(result.followup_question.text);
+        }
+
         setQuestion(result.next_question);
         setTranscript('');
         setUserCode('');
         setShowWhiteboard(false);
         setProgress(result.progress);
 
-        // Speak next question if available
-        if (result.next_question?.text) {
-          speak(result.next_question.text);
+        // Full verbal conversation: speak all responses sequentially
+        if (voiceOn) {
+          const textsToSpeak: string[] = [];
+          
+          // Add interviewer message
+          if (result.interviewer_message) {
+            textsToSpeak.push(result.interviewer_message);
+          }
+          
+          // Add follow-up question if present
+          if (result.followup_question?.text) {
+            textsToSpeak.push(result.followup_question.text);
+          }
+          
+          // Add next question
+          if (result.next_question?.text) {
+            textsToSpeak.push(result.next_question.text);
+          }
+
+          // Speak all messages sequentially
+          if (textsToSpeak.length > 0) {
+            speakSequential(textsToSpeak);
+          }
         }
       }
     } catch (error: any) {
@@ -111,7 +174,7 @@ function InterviewRoom() {
   };
 
   const handleRepeatQuestion = () => {
-    if (question?.text) {
+    if (question?.text && voiceOn) {
       speak(question.text);
     }
   };
@@ -153,6 +216,20 @@ function InterviewRoom() {
             </span>
           </div>
         </div>
+
+        {interviewerMessage && (
+          <div className="interviewer-message-section">
+            <h3>Interviewer</h3>
+            <p>{interviewerMessage}</p>
+          </div>
+        )}
+
+        {followupQuestion && (
+          <div className="followup-question-section">
+            <h3>Follow-up Question</h3>
+            <p>{followupQuestion}</p>
+          </div>
+        )}
 
         {question && (
           <div className="question-section">

@@ -11,6 +11,7 @@
   padding: 2rem;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  color: #333;
 }
 
 .score-section {
@@ -20,6 +21,13 @@
 
 .score-section h2 {
   margin-bottom: 1rem;
+  color: #222;
+}
+
+.cv-improve h1,
+.cv-improve h2,
+.cv-improve label {
+  color: #222;
 }
 
 .progress-bar {
@@ -67,6 +75,7 @@
 .analysis-card li {
   padding: 0.5rem 0;
   border-bottom: 1px solid #e0e0e0;
+  color: #333;
 }
 
 .cv-editor {
@@ -87,6 +96,8 @@
   font-family: 'Courier New', monospace;
   font-size: 0.9rem;
   resize: vertical;
+  color: #333;
+  background: #fff;
 }
 
 .action-buttons {
